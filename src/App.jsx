@@ -273,7 +273,7 @@ function Login({ onLogin }) {
 function Shell({ role, setRole, active, setActive, children }) {
   const menus = {
     resident: [["home", "Inicio", "⌂"], ["payments", "Estado", "💳"], ["visits", "Visitas", "▦"], ["reservations", "Reservas", "📅"], ["tickets", "Tickets", "🔧"], ["docs", "Docs", "📄"]],
-    admin: [["home", "Dashboard", "⌂"], ["residents", "Residentes", "👥"], ["payments", "Pagos", "💳"], ["visits", "Visitas", "▦"], ["reservations", "Reservas", "📅"], ["tickets", "Tickets", "🔧"], ["docs", "Docs", "📄"]],
+    admin: [["home", "Dashboard", "⌂"], ["apartments", "Apartamentos", "🏠"], ["residents", "Residentes", "👥"], ["payments", "Pagos", "💳"], ["visits", "Visitas", "▦"], ["reservations", "Reservas", "📅"], ["tickets", "Tickets", "🔧"], ["docs", "Docs", "📄"]],
     guard: [["home", "Guardia", "🛡️"], ["visits", "Visitas", "📋"]],
   };
 
@@ -661,6 +661,228 @@ function Docs({ role, docs, setDocs }) {
   return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="📄" title="Documentos" sub="Archivos del condominio" />{role === "admin" && <Card><h3 className="mb-3 font-bold">Subir documento</h3><div className="grid gap-3 md:grid-cols-2"><Field label="Nombre"><Text value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></Field><Field label="Archivo"><input key={fileKey} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="mt-1 w-full rounded-xl border px-3 py-2" onChange={e => pick(e.target.files?.[0])} /></Field></div>{form.fileName && <div className="mt-3 text-sm">Seleccionado: <b>{form.fileName}</b> · {form.size}</div>}{msg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}<Btn onClick={save} className="mt-4">Subir y compartir</Btn></Card>}<Card><h3 className="mb-3 font-bold">Documentos disponibles</h3>{role !== "admin" && msg && <div className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}{docs.map(d => <div key={d.id} className="border-b py-3 last:border-0"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><b>{d.title}</b><div className="text-sm text-slate-500">{d.type} · {fmtDate(d.date)} · {d.size}</div><div className="text-xs text-slate-400">{d.fileName}</div></div><div className="flex gap-2"><Btn variant="secondary" className="px-3" onClick={() => d.dataUrl ? setOpen(open === d.id ? null : d.id) : setMsg("Documento de ejemplo sin archivo real.")}>{open === d.id ? "Ocultar" : "Ver"}</Btn>{d.dataUrl && <a href={d.dataUrl} download={d.fileName} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ backgroundColor: BRAND.steel }}>Descargar</a>}{role === "admin" && <Btn variant="danger" className="px-3" onClick={() => remove(d.id)}>Eliminar</Btn>}</div></div>{open === d.id && <Preview d={d} />}</div>)}</Card></div>;
 }
 
+
+function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
+  const empty = { number: "", level: "Nivel 1", owner: "", balance: 0, status: "Disponible" };
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState(null);
+  const [q, setQ] = useState("");
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    setForm(empty);
+    setEditingId(null);
+    setQ("");
+    setMsg("");
+  }, [selectedBuilding]);
+
+  const filtered = apartments
+    .filter(a => `${a.number} ${a.level} ${a.owner} ${a.status}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => String(a.number).localeCompare(String(b.number), "es", { numeric: true }));
+
+  const totalBalance = apartments.reduce((s, a) => s + Number(a.balance || 0), 0);
+  const occupied = apartments.filter(a => a.status === "Ocupado").length;
+  const available = apartments.filter(a => ["Disponible", "Vacío"].includes(a.status)).length;
+
+  function clearForm() {
+    setForm(empty);
+    setEditingId(null);
+    setMsg("");
+  }
+
+  async function save() {
+    if (!form.number.trim()) {
+      setMsg("Ingresa el número o nombre del apartamento.");
+      return;
+    }
+
+    const payload = {
+      building_id: selectedBuilding,
+      number: form.number.trim(),
+      level: form.level.trim() || "Nivel 1",
+      owner: form.owner.trim(),
+      balance: Number(form.balance || 0),
+      status: form.status,
+    };
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("apartments")
+        .update(payload)
+        .eq("id", editingId);
+
+      if (error) {
+        alert("No se pudo actualizar el apartamento en Supabase.");
+        console.error(error);
+        return;
+      }
+
+      setApartments(
+        apartments.map((a) =>
+          a.id === editingId
+            ? {
+                ...a,
+                buildingId: selectedBuilding,
+                number: payload.number,
+                level: payload.level,
+                owner: payload.owner,
+                balance: payload.balance,
+                status: payload.status,
+              }
+            : a
+        )
+      );
+      setMsg("Apartamento actualizado.");
+      setEditingId(null);
+    } else {
+      const newApartment = {
+        id: `apt-${Date.now()}`,
+        buildingId: selectedBuilding,
+        number: payload.number,
+        level: payload.level,
+        owner: payload.owner,
+        balance: payload.balance,
+        status: payload.status,
+      };
+
+      const { error } = await supabase
+        .from("apartments")
+        .insert([
+          {
+            id: newApartment.id,
+            ...payload,
+          },
+        ]);
+
+      if (error) {
+        alert("No se pudo guardar el apartamento en Supabase.");
+        console.error(error);
+        return;
+      }
+
+      setApartments([newApartment, ...apartments]);
+      setMsg("Apartamento agregado.");
+    }
+
+    setForm(empty);
+  }
+
+  function edit(a) {
+    setForm({
+      number: a.number || "",
+      level: a.level || "Nivel 1",
+      owner: a.owner || "",
+      balance: Number(a.balance || 0),
+      status: a.status || "Disponible",
+    });
+    setEditingId(a.id);
+    setMsg("");
+  }
+
+  async function remove(id) {
+    const apt = apartments.find(a => a.id === id);
+    const ok = window.confirm(`¿Eliminar el apartamento ${apt?.number || "seleccionado"}? Esta acción no elimina residentes ya creados.`);
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("apartments")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      alert("No se pudo eliminar el apartamento en Supabase. Revisa si tiene residentes relacionados.");
+      console.error(error);
+      return;
+    }
+
+    setApartments(apartments.filter((a) => a.id !== id));
+
+    if (editingId === id) {
+      clearForm();
+    }
+
+    setMsg("Apartamento eliminado.");
+  }
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="🏠" title="Apartamentos" sub="Administración de unidades por edificio" />
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card><p className="text-sm text-slate-500">Total unidades</p><h3 className="text-3xl font-black">{apartments.length}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Ocupados</p><h3 className="text-3xl font-black">{occupied}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Disponibles / vacíos</p><h3 className="text-3xl font-black">{available}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Mora del edificio</p><h3 className="text-3xl font-black">{usd(totalBalance)}</h3></Card>
+      </div>
+
+      <Card>
+        <h3 className="mb-3 font-bold">{editingId ? "Editar apartamento" : "Ingresar apartamento"}</h3>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Número / nombre">
+            <Text value={form.number} onChange={e => setForm({ ...form, number: e.target.value })} placeholder="Ej. 101, A-01, PH-1" />
+          </Field>
+          <Field label="Nivel">
+            <Text value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} placeholder="Ej. Nivel 1" />
+          </Field>
+          <Field label="Propietario / referencia">
+            <Text value={form.owner} onChange={e => setForm({ ...form, owner: e.target.value })} placeholder="Nombre del propietario" />
+          </Field>
+          <Field label="Saldo">
+            <Text type="number" min="0" step="0.01" value={form.balance} onChange={e => setForm({ ...form, balance: e.target.value })} />
+          </Field>
+          <Field label="Estado">
+            <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+              <option>Disponible</option>
+              <option>Ocupado</option>
+              <option>Vacío</option>
+              <option>Reservado</option>
+              <option>En mantenimiento</option>
+            </select>
+          </Field>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar apartamento"}</Btn>
+          {editingId && <Btn variant="outline" onClick={clearForm}>Cancelar edición</Btn>}
+        </div>
+        {msg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h3 className="font-bold">Apartamentos registrados</h3>
+          <input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por número, nivel, propietario o estado" />
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">No hay apartamentos para mostrar.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filtered.map(a => (
+              <div key={a.id} className="rounded-2xl border bg-slate-50 p-4">
+                <div className="flex justify-between gap-3">
+                  <div>
+                    <b className="text-xl">Apto {a.number}</b>
+                    <div className="text-sm text-slate-500">{a.level || "Sin nivel"}</div>
+                  </div>
+                  <Badge tone={a.status === "Ocupado" ? "good" : a.status === "Reservado" ? "warn" : a.status === "En mantenimiento" ? "bad" : "default"}>{a.status || "Disponible"}</Badge>
+                </div>
+                <div className="mt-3 text-sm">
+                  <div><b>Propietario:</b> {a.owner || "-"}</div>
+                  <div><b>Saldo:</b> {usd(a.balance || 0)}</div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(a)}>Editar</Btn>
+                  <Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(a.id)}>Eliminar</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding }) {
   const empty = { apt: apartments[0]?.number || "101", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
   const [form, setForm] = useState(empty);
@@ -900,6 +1122,7 @@ export default function NeoVecinoMVP() {
 
   const pages = {
     home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} />,
+    apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} />,
     visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} />,
