@@ -426,24 +426,102 @@ function Docs({ role, docs, setDocs }) {
   return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="📄" title="Documentos" sub="Archivos del condominio" />{role === "admin" && <Card><h3 className="mb-3 font-bold">Subir documento</h3><div className="grid gap-3 md:grid-cols-2"><Field label="Nombre"><Text value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></Field><Field label="Archivo"><input key={fileKey} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="mt-1 w-full rounded-xl border px-3 py-2" onChange={e => pick(e.target.files?.[0])} /></Field></div>{form.fileName && <div className="mt-3 text-sm">Seleccionado: <b>{form.fileName}</b> · {form.size}</div>}{msg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}<Btn onClick={save} className="mt-4">Subir y compartir</Btn></Card>}<Card><h3 className="mb-3 font-bold">Documentos disponibles</h3>{role !== "admin" && msg && <div className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}{docs.map(d => <div key={d.id} className="border-b py-3 last:border-0"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><b>{d.title}</b><div className="text-sm text-slate-500">{d.type} · {fmtDate(d.date)} · {d.size}</div><div className="text-xs text-slate-400">{d.fileName}</div></div><div className="flex gap-2"><Btn variant="secondary" className="px-3" onClick={() => d.dataUrl ? setOpen(open === d.id ? null : d.id) : setMsg("Documento de ejemplo sin archivo real.")}>{open === d.id ? "Ocultar" : "Ver"}</Btn>{d.dataUrl && <a href={d.dataUrl} download={d.fileName} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ backgroundColor: BRAND.steel }}>Descargar</a>}{role === "admin" && <Btn variant="danger" className="px-3" onClick={() => remove(d.id)}>Eliminar</Btn>}</div></div>{open === d.id && <Preview d={d} />}</div>)}</Card></div>;
 }
 
-function ResidentsAdmin({ residents, setResidents, apartments }) {
+function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding }) {
   const empty = { apt: apartments[0]?.number || "101", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [q, setQ] = useState("");
   const filtered = residents.filter(r => `${r.apt} ${r.name} ${r.dni} ${r.email}`.toLowerCase().includes(q.toLowerCase()));
-  function save() {
+
+  async function save() {
     if (!form.name.trim() || !form.apt.trim()) return;
+
+    const payload = {
+      building_id: selectedBuilding,
+      apt: form.apt,
+      name: form.name,
+      dni: form.dni,
+      email: form.email,
+      phone: form.phone,
+      type: form.type,
+      status: form.status,
+      notes: form.notes,
+    };
+
     if (editingId) {
-      setResidents(residents.map(r => r.id === editingId ? { ...r, ...form } : r));
+      const { error } = await supabase
+        .from("residents")
+        .update(payload)
+        .eq("id", editingId);
+
+      if (error) {
+        alert("No se pudo actualizar el residente en Supabase.");
+        console.error(error);
+        return;
+      }
+
+      setResidents(
+        residents.map((r) =>
+          r.id === editingId
+            ? { ...r, ...form, buildingId: selectedBuilding }
+            : r
+        )
+      );
+
       setEditingId(null);
     } else {
-      setResidents([{ id: `usr-${Date.now()}`, ...form }, ...residents]);
+      const newResident = {
+        id: `usr-${Date.now()}`,
+        buildingId: selectedBuilding,
+        ...form,
+      };
+
+      const { error } = await supabase
+        .from("residents")
+        .insert([
+          {
+            id: newResident.id,
+            ...payload,
+          },
+        ]);
+
+      if (error) {
+        alert("No se pudo guardar el residente en Supabase.");
+        console.error(error);
+        return;
+      }
+
+      setResidents([newResident, ...residents]);
     }
+
     setForm(empty);
   }
-  function edit(r) { setForm({ apt: r.apt, name: r.name, dni: r.dni, email: r.email, phone: r.phone, type: r.type, status: r.status, notes: r.notes }); setEditingId(r.id); }
-  function remove(id) { setResidents(residents.filter(r => r.id !== id)); if (editingId === id) { setEditingId(null); setForm(empty); } }
+
+  function edit(r) {
+    setForm({ apt: r.apt, name: r.name, dni: r.dni, email: r.email, phone: r.phone, type: r.type, status: r.status, notes: r.notes });
+    setEditingId(r.id);
+  }
+
+  async function remove(id) {
+    const { error } = await supabase
+      .from("residents")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      alert("No se pudo eliminar el residente en Supabase.");
+      console.error(error);
+      return;
+    }
+
+    setResidents(residents.filter((r) => r.id !== id));
+
+    if (editingId === id) {
+      setEditingId(null);
+      setForm(empty);
+    }
+  }
+
   return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="👥" title="Residentes" sub="Registro de propietarios, inquilinos y contactos por apartamento" /><Card><h3 className="mb-3 font-bold">{editingId ? "Editar residente" : "Ingresar nuevo residente"}</h3><div className="grid gap-3 md:grid-cols-3"><Field label="Apartamento"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.apt} onChange={e => setForm({ ...form, apt: e.target.value })}>{apartments.map(a => <option key={a.id} value={a.number}>{a.number} · {a.level}</option>)}</select></Field><Field label="Nombre completo"><Text value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field><Field label="DNI / Identidad"><Text value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} /></Field><Field label="Correo"><Text type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field><Field label="Teléfono"><Text value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Tipo"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Propietario</option><option>Inquilino</option><option>Apoderado</option><option>Contacto autorizado</option></select></Field><Field label="Estado"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>Activo</option><option>Inactivo</option><option>Pendiente</option></select></Field><Field label="Notas"><Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field></div><div className="mt-4 flex flex-wrap gap-2"><Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar residente"}</Btn>{editingId && <Btn variant="outline" onClick={() => { setEditingId(null); setForm(empty); }}>Cancelar edición</Btn>}</div></Card><Card><div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><h3 className="font-bold">Residentes registrados</h3><input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre, apto, DNI o correo" /></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map(r => <div key={r.id} className="rounded-2xl border bg-slate-50 p-4"><div className="flex justify-between gap-3"><div><b>{r.name}</b><div className="text-sm text-slate-500">Apto {r.apt} · {r.type}</div></div><Badge tone={r.status === "Activo" ? "good" : r.status === "Pendiente" ? "warn" : "default"}>{r.status}</Badge></div><div className="mt-3 text-sm"><div><b>DNI:</b> {r.dni || "-"}</div><div><b>Correo:</b> {r.email || "-"}</div><div><b>Teléfono:</b> {r.phone || "-"}</div>{r.notes && <div><b>Notas:</b> {r.notes}</div>}</div><div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div></div>)}</div></Card></div>;
 }
 
@@ -451,8 +529,8 @@ export default function NeoVecinoMVP() {
   const [role, setRole] = useState(null);
   const [active, setActive] = useState("home");
   const [buildings, setBuildings] = useState(seedBuildings);
-const [loadingData, setLoadingData] = useState(false);
-const [dataError, setDataError] = useState("");
+  const [loadingData, setLoadingData] = useState(false);
+  const [dataError, setDataError] = useState("");
   const [selectedBuilding, setSelectedBuilding] = useState("canarias");
 
   const [apartments, setApartments] = useState(() => [
@@ -501,65 +579,66 @@ const [dataError, setDataError] = useState("");
     { id: "usr-l-2", buildingId: "lomas", apt: "102", name: "Mario Castillo", dni: "0801-1982-00000", email: "mario@email.com", phone: "9999-4444", type: "Inquilino", status: "Activo", notes: "" },
     { id: "usr-c-1", buildingId: "centro", apt: "301", name: "Roberto Díaz", dni: "0801-1975-00000", email: "roberto@email.com", phone: "9999-5555", type: "Propietario", status: "Activo", notes: "" },
   ]);
+
   useEffect(() => {
-  async function loadCoreData() {
-    setLoadingData(true);
-    setDataError("");
+    async function loadCoreData() {
+      setLoadingData(true);
+      setDataError("");
 
-    try {
-      const [buildingsResult, apartmentsResult, residentsResult] = await Promise.all([
-        supabase.from("buildings").select("*").order("name"),
-        supabase.from("apartments").select("*").order("number"),
-        supabase.from("residents").select("*").order("name"),
-      ]);
+      try {
+        const [buildingsResult, apartmentsResult, residentsResult] = await Promise.all([
+          supabase.from("buildings").select("*").order("name"),
+          supabase.from("apartments").select("*").order("number"),
+          supabase.from("residents").select("*").order("name"),
+        ]);
 
-      if (buildingsResult.error) throw buildingsResult.error;
-      if (apartmentsResult.error) throw apartmentsResult.error;
-      if (residentsResult.error) throw residentsResult.error;
+        if (buildingsResult.error) throw buildingsResult.error;
+        if (apartmentsResult.error) throw apartmentsResult.error;
+        if (residentsResult.error) throw residentsResult.error;
 
-      const dbBuildings = (buildingsResult.data || []).map((b) => ({
-        id: b.id,
-        name: b.name,
-        address: b.address,
-        units: b.units,
-      }));
+        const dbBuildings = (buildingsResult.data || []).map((b) => ({
+          id: b.id,
+          name: b.name,
+          address: b.address,
+          units: b.units,
+        }));
 
-      const dbApartments = (apartmentsResult.data || []).map((a) => ({
-        id: a.id,
-        buildingId: a.building_id,
-        number: a.number,
-        level: a.level,
-        owner: a.owner,
-        balance: Number(a.balance || 0),
-        status: a.status,
-      }));
+        const dbApartments = (apartmentsResult.data || []).map((a) => ({
+          id: a.id,
+          buildingId: a.building_id,
+          number: a.number,
+          level: a.level,
+          owner: a.owner,
+          balance: Number(a.balance || 0),
+          status: a.status,
+        }));
 
-      const dbResidents = (residentsResult.data || []).map((r) => ({
-        id: r.id,
-        buildingId: r.building_id,
-        apt: r.apt,
-        name: r.name,
-        dni: r.dni,
-        email: r.email,
-        phone: r.phone,
-        type: r.type,
-        status: r.status,
-        notes: r.notes,
-      }));
+        const dbResidents = (residentsResult.data || []).map((r) => ({
+          id: r.id,
+          buildingId: r.building_id,
+          apt: r.apt,
+          name: r.name,
+          dni: r.dni,
+          email: r.email,
+          phone: r.phone,
+          type: r.type,
+          status: r.status,
+          notes: r.notes,
+        }));
 
-      if (dbBuildings.length) setBuildings(dbBuildings);
-      if (dbApartments.length) setApartments(dbApartments);
-      if (dbResidents.length) setAllResidents(dbResidents);
-    } catch (error) {
-      console.error("Error cargando datos desde Supabase:", error);
-      setDataError("No se pudieron cargar los datos desde Supabase. La app está usando datos demo.");
-    } finally {
-      setLoadingData(false);
+        if (dbBuildings.length) setBuildings(dbBuildings);
+        if (dbApartments.length) setApartments(dbApartments);
+        if (dbResidents.length) setAllResidents(dbResidents);
+      } catch (error) {
+        console.error("Error cargando datos desde Supabase:", error);
+        setDataError("No se pudieron cargar los datos desde Supabase. La app está usando datos demo.");
+      } finally {
+        setLoadingData(false);
+      }
     }
-  }
 
-  loadCoreData();
-}, []);
+    loadCoreData();
+  }, []);
 
   const building = buildings.find(b => b.id === selectedBuilding) || buildings[0];
   const belongs = item => (item.buildingId || "canarias") === selectedBuilding;
@@ -586,7 +665,7 @@ const [dataError, setDataError] = useState("");
 
   const pages = {
     home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} />,
-    residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} />,
+    residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} />,
     visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} />,
@@ -594,22 +673,22 @@ const [dataError, setDataError] = useState("");
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
   };
 
- return (
-  <Shell role={role} setRole={setRole} active={active} setActive={setActive}>
-    {loadingData && (
-      <div className="mb-4 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700">
-        Cargando datos desde Supabase...
-      </div>
-    )}
+  return (
+    <Shell role={role} setRole={setRole} active={active} setActive={setActive}>
+      {loadingData && (
+        <div className="mb-4 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700">
+          Cargando datos desde Supabase...
+        </div>
+      )}
 
-    {dataError && (
-      <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
-        {dataError}
-      </div>
-    )}
+      {dataError && (
+        <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+          {dataError}
+        </div>
+      )}
 
-    <BuildingBar role={role} buildings={buildings} selectedBuilding={selectedBuilding} setSelectedBuilding={setSelectedBuilding} building={building} />
-    {pages[active] || pages.home}
-  </Shell>
+      <BuildingBar role={role} buildings={buildings} selectedBuilding={selectedBuilding} setSelectedBuilding={setSelectedBuilding} building={building} />
+      {pages[active] || pages.home}
+    </Shell>
   );
 }
