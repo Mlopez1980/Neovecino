@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
 const seedBuildings = [
@@ -449,7 +450,9 @@ function ResidentsAdmin({ residents, setResidents, apartments }) {
 export default function NeoVecinoMVP() {
   const [role, setRole] = useState(null);
   const [active, setActive] = useState("home");
-  const [buildings] = useState(seedBuildings);
+  const [buildings, setBuildings] = useState(seedBuildings);
+const [loadingData, setLoadingData] = useState(false);
+const [dataError, setDataError] = useState("");
   const [selectedBuilding, setSelectedBuilding] = useState("canarias");
 
   const [apartments] = useState(() => [
