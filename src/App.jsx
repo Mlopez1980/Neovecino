@@ -450,6 +450,18 @@ function ResidentsAdmin({ residents, setResidents, apartments }) {
 export default function NeoVecinoMVP() {
   const [role, setRole] = useState(null);
   const [active, setActive] = useState("home");
+  useEffect(() => {
+  async function testSupabase() {
+    const { data, error } = await supabase
+      .from("buildings")
+      .select("name")
+      .limit(1);
+
+    console.log("Supabase test:", { data, error });
+  }
+
+  testSupabase();
+}, []);
   const [buildings] = useState(seedBuildings);
   const [selectedBuilding, setSelectedBuilding] = useState("canarias");
 
