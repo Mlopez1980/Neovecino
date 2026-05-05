@@ -390,21 +390,256 @@ function AvailabilityCalendar({ reservations, area, selectedDate, onSelectDate }
   function move(delta) { const n = new Date(vy, vm - 1 + delta, 1); setView(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`); }
   return <div className="rounded-2xl border bg-slate-50 p-3"><div className="mb-3 flex items-center justify-between"><button className="rounded-xl bg-white px-3 py-2 font-bold" onClick={() => move(-1)}>‹</button><b className="capitalize">{name}</b><button className="rounded-xl bg-white px-3 py-2 font-bold" onClick={() => move(1)}>›</button></div><div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-500">{["D","L","M","M","J","V","S"].map((d, i) => <div key={i}>{d}</div>)}</div><div className="grid grid-cols-7 gap-1">{cells.map((date, i) => { if (!date) return <div key={i} className="h-11" />; const s = status(date); const sel = date === selectedDate; const busy = s === "ocupado"; const bg = sel ? BRAND.black : busy ? "#fee2e2" : s === "pendiente" ? "#fef3c7" : "#dcfce7"; const color = sel ? BRAND.white : busy ? "#991b1b" : s === "pendiente" ? "#92400e" : "#166534"; return <button key={date} onClick={() => !busy && onSelectDate(date)} className="h-11 rounded-xl text-sm font-black" style={{ backgroundColor: bg, color }}>{Number(date.slice(-2))}</button>; })}</div><div className="mt-3 flex flex-wrap gap-2 text-xs font-bold"><span className="rounded-full bg-green-100 px-2 py-1 text-green-700">Disponible</span><span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">Pendiente</span><span className="rounded-full bg-rose-100 px-2 py-1 text-rose-700">Ocupado</span></div></div>;
 }
-function clock(v) { const [h, m] = v.split(":").map(Number); return `${h % 12 || 12}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "p.m." : "a.m."}`; }
-function addHours(v, hrs) { const [h, m] = v.split(":").map(Number); const d = new Date(2026, 0, 1, h, m || 0); d.setHours(d.getHours() + Number(hrs)); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
-function isSunday(date) { const [y, m, d] = date.split("-").map(Number); return new Date(y, m - 1, d).getDay() === 0; }
+function clock(v) {
+  if (!v) return "";
+  const [h, m] = v.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "p.m." : "a.m."}`;
+}
+
+function addHours(v, hrs) {
+  const [h, m] = v.split(":").map(Number);
+  const d = new Date(2026, 0, 1, h, m || 0);
+  d.setHours(d.getHours() + Number(hrs));
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function isSunday(date) {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay() === 0;
+}
+
+function dayIndex(date) {
+  if (!date) return 1;
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay();
+}
+
+function toMinutes(v) {
+  if (!v) return 0;
+  const [h, m] = v.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+const AREA_SCHEDULES = {
+  "Área social techada": {
+    0: { open: "09:00", close: "18:00" },
+    1: { open: "08:00", close: "22:00" },
+    2: { open: "08:00", close: "22:00" },
+    3: { open: "08:00", close: "22:00" },
+    4: { open: "08:00", close: "22:00" },
+    5: { open: "08:00", close: "23:00" },
+    6: { open: "09:00", close: "23:00" },
+  },
+  "Área de asados": {
+    0: { open: "09:00", close: "18:00" },
+    1: { open: "08:00", close: "22:00" },
+    2: { open: "08:00", close: "22:00" },
+    3: { open: "08:00", close: "22:00" },
+    4: { open: "08:00", close: "22:00" },
+    5: { open: "08:00", close: "23:00" },
+    6: { open: "09:00", close: "23:00" },
+  },
+  Coworking: {
+    0: null,
+    1: { open: "08:00", close: "18:00" },
+    2: { open: "08:00", close: "18:00" },
+    3: { open: "08:00", close: "18:00" },
+    4: { open: "08:00", close: "18:00" },
+    5: { open: "08:00", close: "18:00" },
+    6: { open: "09:00", close: "13:00" },
+  },
+};
+
+function getAreaSchedule(area, date) {
+  const scheduleByDay = AREA_SCHEDULES[area] || AREA_SCHEDULES["Área social techada"];
+  return scheduleByDay[dayIndex(date)] || null;
+}
+
+function getBaseMaxHours(area) {
+  return area === "Coworking" ? 2 : 6;
+}
+
+function getMaxReservableHours(area, date, start) {
+  const schedule = getAreaSchedule(area, date);
+  if (!schedule) return 0;
+
+  const startMin = toMinutes(start);
+  const openMin = toMinutes(schedule.open);
+  const closeMin = toMinutes(schedule.close);
+
+  if (startMin < openMin || startMin >= closeMin) return 0;
+
+  const availableBySchedule = Math.floor((closeMin - startMin) / 60);
+  return Math.max(0, Math.min(getBaseMaxHours(area), availableBySchedule));
+}
+
+function getScheduleText(area, date) {
+  const schedule = getAreaSchedule(area, date);
+  if (!schedule) return "Cerrado";
+  return `${clock(schedule.open)} - ${clock(schedule.close)}`;
+}
+
 function Reservations({ role, reservations, setReservations }) {
   const [form, setForm] = useState({ area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
   const [notice, setNotice] = useState("");
-  const maxHours = form.area === "Coworking" ? 2 : 6;
+
+  const maxHours = getMaxReservableHours(form.area, form.date, form.start);
+  const scheduleText = getScheduleText(form.area, form.date);
   const cleaning = form.area === "Coworking" ? 0 : isSunday(form.date) ? 1600 : 1000;
   const deposit = form.area === "Coworking" ? 0 : 1000;
-  const range = `${clock(form.start)} - ${clock(addHours(form.start, form.hours))}`;
+  const safeHours = maxHours > 0 ? Math.min(Number(form.hours || 1), maxHours) : Number(form.hours || 1);
+  const range = `${clock(form.start)} - ${clock(addHours(form.start, safeHours))}`;
   const rows = role === "resident" ? reservations.filter(r => r.apt === "101") : reservations;
-  const duplicate = reservations.some(r => r.apt === "101" && r.area === form.area && r.date === form.date && r.start === form.start && Number(r.hours) === Number(form.hours) && r.status !== "Rechazada");
-  function add() { if (duplicate) { setNotice("Ya existe una solicitud igual para esa área, fecha y horario."); return; } const r = { id: `res-${Date.now()}`, apt: "101", area: form.area, date: form.date, start: form.start, hours: Number(form.hours), time: range, cleaning, deposit, status: "Pendiente" }; setReservations([r, ...reservations]); setNotice("Solicitud enviada."); }
-  function approve(id, status) { setReservations(reservations.map(r => r.id === id ? { ...r, status } : r)); }
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="📅" title="Reservas" sub="Calendario y solicitudes de áreas" />{role === "resident" && <Card><div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]"><AvailabilityCalendar reservations={reservations} area={form.area} selectedDate={form.date} onSelectDate={d => setForm({ ...form, date: d })} /><div className="space-y-3"><Field label="Área"><select className="mt-1 w-full rounded-xl border px-3 py-2" value={form.area} onChange={e => setForm({ ...form, area: e.target.value, hours: e.target.value === "Coworking" ? 2 : 4 })}><option>Área social techada</option><option>Área de asados</option><option>Coworking</option></select></Field><Field label="Fecha"><DateField value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field><Field label="Hora"><input type="time" className="mt-1 w-full rounded-xl border px-3 py-2" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })} /></Field><Field label={`Duración máxima: ${maxHours} horas`}><select className="mt-1 w-full rounded-xl border px-3 py-2" value={form.hours} onChange={e => setForm({ ...form, hours: Number(e.target.value) })}>{Array.from({ length: maxHours }, (_, i) => i + 1).map(h => <option key={h} value={h}>{h} {h === 1 ? "hora" : "horas"}</option>)}</select></Field><div className="rounded-2xl bg-amber-50 p-3 text-sm"><b>Horario:</b> {range}<br /><b>Limpieza:</b> {lps(cleaning)}<br /><b>Depósito:</b> {lps(deposit)}<br /><b>Total:</b> {lps(cleaning + deposit)}<br />{form.area === "Coworking" && <span>Coworking no tiene cuota de limpieza ni depósito.</span>}</div>{notice && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{notice}</div>}<Btn onClick={add}>{duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}</Btn></div></div></Card>}<Card><h3 className="mb-3 font-bold">Reservas registradas</h3><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{rows.map(r => <div key={r.id} className="rounded-2xl border bg-slate-50 p-4"><div className="flex justify-between"><b>{r.area}</b><Badge tone={r.status === "Aprobada" ? "good" : r.status === "Rechazada" ? "bad" : "warn"}>{r.status}</Badge></div><div className="mt-2 text-sm text-slate-500">Apto {r.apt} · {fmtDate(r.date)}</div><div className="mt-1 text-sm">{r.time}</div><div className="mt-3 rounded-xl bg-white p-3 text-xs"><b>Total:</b> {lps((r.cleaning || 0) + (r.deposit || 0))}</div>{role === "admin" && r.status === "Pendiente" && <div className="mt-3 flex gap-2"><Btn className="px-3 py-1.5" onClick={() => approve(r.id, "Aprobada")}>Aprobar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => approve(r.id, "Rechazada")}>Rechazar</Btn></div>}</div>)}</div></Card></div>;
+  const duplicate = reservations.some(r => r.apt === "101" && r.area === form.area && r.date === form.date && r.start === form.start && Number(r.hours) === Number(safeHours) && r.status !== "Rechazada");
+
+  useEffect(() => {
+    if (maxHours > 0 && Number(form.hours) > maxHours) {
+      setForm(prev => ({ ...prev, hours: maxHours }));
+    }
+  }, [maxHours, form.hours]);
+
+  function updateArea(area) {
+    const preferredHours = area === "Coworking" ? 2 : 4;
+    const nextMax = getMaxReservableHours(area, form.date, form.start);
+    setForm({ ...form, area, hours: nextMax > 0 ? Math.min(preferredHours, nextMax) : preferredHours });
+    setNotice("");
+  }
+
+  function updateDate(date) {
+    const nextMax = getMaxReservableHours(form.area, date, form.start);
+    setForm({ ...form, date, hours: nextMax > 0 ? Math.min(Number(form.hours || 1), nextMax) : form.hours });
+    setNotice("");
+  }
+
+  function updateStart(start) {
+    const nextMax = getMaxReservableHours(form.area, form.date, start);
+    setForm({ ...form, start, hours: nextMax > 0 ? Math.min(Number(form.hours || 1), nextMax) : form.hours });
+    setNotice("");
+  }
+
+  function add() {
+    if (maxHours <= 0) {
+      setNotice(`Ese horario no está disponible. Horario permitido para ${form.area}: ${scheduleText}.`);
+      return;
+    }
+
+    if (Number(form.hours) > maxHours) {
+      setNotice(`Para esa hora solo puedes reservar un máximo de ${maxHours} hora(s).`);
+      return;
+    }
+
+    if (duplicate) {
+      setNotice("Ya existe una solicitud igual para esa área, fecha y horario.");
+      return;
+    }
+
+    const r = {
+      id: `res-${Date.now()}`,
+      apt: "101",
+      area: form.area,
+      date: form.date,
+      start: form.start,
+      hours: Number(safeHours),
+      time: range,
+      cleaning,
+      deposit,
+      status: "Pendiente",
+    };
+
+    setReservations([r, ...reservations]);
+    setNotice("Solicitud enviada.");
+  }
+
+  function approve(id, status) {
+    setReservations(reservations.map(r => r.id === id ? { ...r, status } : r));
+  }
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="📅" title="Reservas" sub="Calendario y solicitudes de áreas" />
+
+      {role === "resident" && (
+        <Card>
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+            <AvailabilityCalendar reservations={reservations} area={form.area} selectedDate={form.date} onSelectDate={updateDate} />
+
+            <div className="space-y-3">
+              <Field label="Área">
+                <select className="mt-1 w-full rounded-xl border px-3 py-2" value={form.area} onChange={e => updateArea(e.target.value)}>
+                  <option>Área social techada</option>
+                  <option>Área de asados</option>
+                  <option>Coworking</option>
+                </select>
+              </Field>
+
+              <Field label="Fecha">
+                <DateField value={form.date} onChange={e => updateDate(e.target.value)} />
+              </Field>
+
+              <Field label={`Hora de inicio · horario permitido: ${scheduleText}`}>
+                <input type="time" className="mt-1 w-full rounded-xl border px-3 py-2" value={form.start} onChange={e => updateStart(e.target.value)} />
+              </Field>
+
+              <Field label={maxHours > 0 ? `Duración máxima según horario: ${maxHours} hora(s)` : "Duración no disponible"}>
+                <select
+                  className="mt-1 w-full rounded-xl border px-3 py-2 disabled:bg-slate-100 disabled:text-slate-400"
+                  value={maxHours > 0 ? safeHours : ""}
+                  disabled={maxHours <= 0}
+                  onChange={e => setForm({ ...form, hours: Number(e.target.value) })}
+                >
+                  {maxHours <= 0 ? (
+                    <option value="">Horario no disponible</option>
+                  ) : (
+                    Array.from({ length: maxHours }, (_, i) => i + 1).map(h => (
+                      <option key={h} value={h}>{h} {h === 1 ? "hora" : "horas"}</option>
+                    ))
+                  )}
+                </select>
+              </Field>
+
+              <div className={maxHours > 0 ? "rounded-2xl bg-amber-50 p-3 text-sm" : "rounded-2xl bg-rose-50 p-3 text-sm text-rose-700"}>
+                <b>Horario permitido del área:</b> {scheduleText}<br />
+                <b>Horario solicitado:</b> {maxHours > 0 ? range : "No disponible"}<br />
+                <b>Limpieza:</b> {lps(cleaning)}<br />
+                <b>Depósito:</b> {lps(deposit)}<br />
+                <b>Total:</b> {lps(cleaning + deposit)}<br />
+                {form.area === "Coworking" && <span>Coworking no tiene cuota de limpieza ni depósito.</span>}
+              </div>
+
+              {notice && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{notice}</div>}
+
+              <Btn onClick={add} variant={maxHours <= 0 ? "secondary" : "primary"}>
+                {maxHours <= 0 ? "Horario no disponible" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
+              </Btn>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <h3 className="mb-3 font-bold">Reservas registradas</h3>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map(r => (
+            <div key={r.id} className="rounded-2xl border bg-slate-50 p-4">
+              <div className="flex justify-between">
+                <b>{r.area}</b>
+                <Badge tone={r.status === "Aprobada" ? "good" : r.status === "Rechazada" ? "bad" : "warn"}>{r.status}</Badge>
+              </div>
+              <div className="mt-2 text-sm text-slate-500">Apto {r.apt} · {fmtDate(r.date)}</div>
+              <div className="mt-1 text-sm">{r.time}</div>
+              <div className="mt-3 rounded-xl bg-white p-3 text-xs"><b>Total:</b> {lps((r.cleaning || 0) + (r.deposit || 0))}</div>
+              {role === "admin" && r.status === "Pendiente" && (
+                <div className="mt-3 flex gap-2">
+                  <Btn className="px-3 py-1.5" onClick={() => approve(r.id, "Aprobada")}>Aprobar</Btn>
+                  <Btn variant="danger" className="px-3 py-1.5" onClick={() => approve(r.id, "Rechazada")}>Rechazar</Btn>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 function Tickets({ role, tickets, setTickets }) {
