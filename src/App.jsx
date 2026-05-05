@@ -455,7 +455,7 @@ const [loadingData, setLoadingData] = useState(false);
 const [dataError, setDataError] = useState("");
   const [selectedBuilding, setSelectedBuilding] = useState("canarias");
 
-  const [apartments] = useState(() => [
+  const [apartments, setApartments] = useState(() => [
     ...seedApartments.map(a => ({ ...a, buildingId: "canarias" })),
     { id: 101, buildingId: "lomas", number: "101", level: "Nivel 1", owner: "Sofía Andino", balance: 0, status: "Ocupado" },
     { id: 102, buildingId: "lomas", number: "102", level: "Nivel 1", owner: "Mario Castillo", balance: 75, status: "Ocupado" },
@@ -501,6 +501,65 @@ const [dataError, setDataError] = useState("");
     { id: "usr-l-2", buildingId: "lomas", apt: "102", name: "Mario Castillo", dni: "0801-1982-00000", email: "mario@email.com", phone: "9999-4444", type: "Inquilino", status: "Activo", notes: "" },
     { id: "usr-c-1", buildingId: "centro", apt: "301", name: "Roberto Díaz", dni: "0801-1975-00000", email: "roberto@email.com", phone: "9999-5555", type: "Propietario", status: "Activo", notes: "" },
   ]);
+  useEffect(() => {
+  async function loadCoreData() {
+    setLoadingData(true);
+    setDataError("");
+
+    try {
+      const [buildingsResult, apartmentsResult, residentsResult] = await Promise.all([
+        supabase.from("buildings").select("*").order("name"),
+        supabase.from("apartments").select("*").order("number"),
+        supabase.from("residents").select("*").order("name"),
+      ]);
+
+      if (buildingsResult.error) throw buildingsResult.error;
+      if (apartmentsResult.error) throw apartmentsResult.error;
+      if (residentsResult.error) throw residentsResult.error;
+
+      const dbBuildings = (buildingsResult.data || []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        address: b.address,
+        units: b.units,
+      }));
+
+      const dbApartments = (apartmentsResult.data || []).map((a) => ({
+        id: a.id,
+        buildingId: a.building_id,
+        number: a.number,
+        level: a.level,
+        owner: a.owner,
+        balance: Number(a.balance || 0),
+        status: a.status,
+      }));
+
+      const dbResidents = (residentsResult.data || []).map((r) => ({
+        id: r.id,
+        buildingId: r.building_id,
+        apt: r.apt,
+        name: r.name,
+        dni: r.dni,
+        email: r.email,
+        phone: r.phone,
+        type: r.type,
+        status: r.status,
+        notes: r.notes,
+      }));
+
+      if (dbBuildings.length) setBuildings(dbBuildings);
+      if (dbApartments.length) setApartments(dbApartments);
+      if (dbResidents.length) setAllResidents(dbResidents);
+    } catch (error) {
+      console.error("Error cargando datos desde Supabase:", error);
+      setDataError("No se pudieron cargar los datos desde Supabase. La app está usando datos demo.");
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  loadCoreData();
+}, []);
 
   const building = buildings.find(b => b.id === selectedBuilding) || buildings[0];
   const belongs = item => (item.buildingId || "canarias") === selectedBuilding;
