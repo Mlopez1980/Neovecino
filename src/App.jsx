@@ -663,7 +663,9 @@ function Docs({ role, docs, setDocs }) {
 
 
 function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
-  const empty = { number: "", level: "Nivel 1", owner: "", balance: 0, status: "Disponible" };
+  // Usamos "Vacío" como estado base porque es el valor que ya existía en los datos originales.
+  // Esto evita errores si Supabase tiene una restricción/check que no acepta "Disponible".
+  const empty = { number: "", level: "Nivel 1", owner: "", balance: 0, status: "Vacío" };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [q, setQ] = useState("");
@@ -690,6 +692,27 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
     setMsg("");
   }
 
+  function dbApartmentToApp(row) {
+    return {
+      id: row.id,
+      buildingId: row.building_id,
+      number: row.number,
+      level: row.level,
+      owner: row.owner,
+      balance: Number(row.balance || 0),
+      status: row.status,
+    };
+  }
+
+  function showSupabaseError(action, error) {
+    const detail = [error?.message, error?.details, error?.hint]
+      .filter(Boolean)
+      .join(" | ");
+
+    console.error(`Error Supabase al ${action} apartamento:`, error);
+    alert(`No se pudo ${action} el apartamento en Supabase.\n\nDetalle técnico: ${detail || "Error desconocido"}`);
+  }
+
   async function save() {
     if (!form.number.trim()) {
       setMsg("Ingresa el número o nombre del apartamento.");
@@ -706,37 +729,20 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
     };
 
     if (editingId) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("apartments")
         .update(payload)
-        .eq("id", editingId);
+        .eq("id", editingId)
+        .select("id, building_id, number, level, owner, balance, status")
+        .single();
 
       if (error) {
-        alert("No se pudo actualizar el apartamento en Supabase.");
-        console.error(error);
+        showSupabaseError("actualizar", error);
         return;
       }
 
-      setApartments(
-        apartments.map((a) =>
-          a.id === editingId
-            ? {
-                ...a,
-                buildingId: selectedBuilding,
-                number: payload.number,
-                level: payload.level,
-                owner: payload.owner,
-                balance: payload.balance,
-                status: payload.status,
-              }
-            : a
-        )
-      );
-      setMsg("Apartamento actualizado.");
-      setEditingId(null);
-    } else {
-      const newApartment = {
-        id: `apt-${Date.now()}`,
+      const updatedApartment = data ? dbApartmentToApp(data) : {
+        id: editingId,
         buildingId: selectedBuilding,
         number: payload.number,
         level: payload.level,
@@ -745,20 +751,32 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
         status: payload.status,
       };
 
-      const { error } = await supabase
+      setApartments(apartments.map((a) => a.id === editingId ? updatedApartment : a));
+      setMsg("Apartamento actualizado.");
+      setEditingId(null);
+    } else {
+      // Importante: NO enviamos id manual. Supabase debe generarlo.
+      // Esto evita errores cuando id es bigint identity, uuid o serial.
+      const { data, error } = await supabase
         .from("apartments")
-        .insert([
-          {
-            id: newApartment.id,
-            ...payload,
-          },
-        ]);
+        .insert([payload])
+        .select("id, building_id, number, level, owner, balance, status")
+        .single();
 
       if (error) {
-        alert("No se pudo guardar el apartamento en Supabase.");
-        console.error(error);
+        showSupabaseError("guardar", error);
         return;
       }
+
+      const newApartment = data ? dbApartmentToApp(data) : {
+        id: `local-${Date.now()}`,
+        buildingId: selectedBuilding,
+        number: payload.number,
+        level: payload.level,
+        owner: payload.owner,
+        balance: payload.balance,
+        status: payload.status,
+      };
 
       setApartments([newApartment, ...apartments]);
       setMsg("Apartamento agregado.");
@@ -773,7 +791,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       level: a.level || "Nivel 1",
       owner: a.owner || "",
       balance: Number(a.balance || 0),
-      status: a.status || "Disponible",
+      status: a.status || "Vacío",
     });
     setEditingId(a.id);
     setMsg("");
@@ -790,8 +808,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       .eq("id", id);
 
     if (error) {
-      alert("No se pudo eliminar el apartamento en Supabase. Revisa si tiene residentes relacionados.");
-      console.error(error);
+      showSupabaseError("eliminar", error);
       return;
     }
 
@@ -832,9 +849,8 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
           </Field>
           <Field label="Estado">
             <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-              <option>Disponible</option>
-              <option>Ocupado</option>
               <option>Vacío</option>
+              <option>Ocupado</option>
               <option>Reservado</option>
               <option>En mantenimiento</option>
             </select>
@@ -864,7 +880,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
                     <b className="text-xl">Apto {a.number}</b>
                     <div className="text-sm text-slate-500">{a.level || "Sin nivel"}</div>
                   </div>
-                  <Badge tone={a.status === "Ocupado" ? "good" : a.status === "Reservado" ? "warn" : a.status === "En mantenimiento" ? "bad" : "default"}>{a.status || "Disponible"}</Badge>
+                  <Badge tone={a.status === "Ocupado" ? "good" : a.status === "Reservado" ? "warn" : a.status === "En mantenimiento" ? "bad" : "default"}>{a.status || "Vacío"}</Badge>
                 </div>
                 <div className="mt-3 text-sm">
                   <div><b>Propietario:</b> {a.owner || "-"}</div>
