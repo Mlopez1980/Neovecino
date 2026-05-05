@@ -341,7 +341,7 @@ function Shell({ role, setRole, active, setActive, children }) {
 function HomePage({ role, apt, apartments, visits, tickets, reservations }) {
   if (role === "admin") return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="⌂" title="Dashboard" sub="Resumen administrativo" /><div className="grid gap-4 md:grid-cols-4"><Card><p className="text-sm text-slate-500">Apartamentos</p><h3 className="text-3xl font-black">{apartments.length}</h3></Card><Card><p className="text-sm text-slate-500">Mora total</p><h3 className="text-3xl font-black">{usd(apartments.reduce((s, a) => s + a.balance, 0))}</h3></Card><Card><p className="text-sm text-slate-500">Visitas</p><h3 className="text-3xl font-black">{visits.length}</h3></Card><Card><p className="text-sm text-slate-500">Tickets</p><h3 className="text-3xl font-black">{tickets.length}</h3></Card></div></div>;
   if (role === "guard") return <GuardPanel visits={visits} setVisits={() => {}} readOnly />;
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="⌂" title="Inicio" sub="Resumen rápido de tu apartamento" /><div className="grid gap-4 md:grid-cols-3"><Card><p className="text-sm text-slate-500">Apartamento</p><h3 className="text-3xl font-black">{apt.number}</h3><p className="text-sm text-slate-500">{apt.level} · {apt.owner}</p></Card><Card><p className="text-sm text-slate-500">Saldo pendiente</p><h3 className="text-3xl font-black">{usd(apt.balance)}</h3></Card><Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => v.apt === apt.number).length}</h3></Card></div><div className="grid gap-4 md:grid-cols-2"><Card><h3 className="mb-3 font-bold">Tickets recientes</h3>{tickets.filter(t => t.apt === apt.number).map(t => <div key={t.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{t.title}</b><div className="text-sm text-slate-500">{fmtDate(t.date)} · {t.status}</div></div>)}</Card><Card><h3 className="mb-3 font-bold">Reservas</h3>{reservations.filter(r => r.apt === apt.number).map(r => <div key={r.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{r.area}</b><div className="text-sm text-slate-500">{fmtDate(r.date)} · {r.time}</div></div>)}</Card></div></div>;
+  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="⌂" title="Inicio" sub="Resumen rápido de tu apartamento" /><div className="grid gap-4 md:grid-cols-3"><Card><p className="text-sm text-slate-500">Apartamento</p><h3 className="text-3xl font-black">{apt.number}</h3><p className="text-sm text-slate-500">{apt.level} · Propietario: {apt.owner || "-"}<br />Residente: {apt.resident || apt.owner || "-"}</p></Card><Card><p className="text-sm text-slate-500">Saldo pendiente</p><h3 className="text-3xl font-black">{usd(apt.balance)}</h3></Card><Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => v.apt === apt.number).length}</h3></Card></div><div className="grid gap-4 md:grid-cols-2"><Card><h3 className="mb-3 font-bold">Tickets recientes</h3>{tickets.filter(t => t.apt === apt.number).map(t => <div key={t.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{t.title}</b><div className="text-sm text-slate-500">{fmtDate(t.date)} · {t.status}</div></div>)}</Card><Card><h3 className="mb-3 font-bold">Reservas</h3>{reservations.filter(r => r.apt === apt.number).map(r => <div key={r.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{r.area}</b><div className="text-sm text-slate-500">{fmtDate(r.date)} · {r.time}</div></div>)}</Card></div></div>;
 }
 
 function Payments({ role, payments, apartments }) {
@@ -930,11 +930,11 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
           <Field label="Nivel">
             <Text value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} placeholder="Ej. Nivel 1" />
           </Field>
-          <Field label="Propietario">
-            <Text value={form.owner} onChange={e => setForm({ ...form, owner: e.target.value })} placeholder="Dueño legal o referencia" />
+          <Field label="Propietario legal">
+            <Text value={form.owner} onChange={e => setForm({ ...form, owner: e.target.value })} placeholder="Ej. Juan Pérez" />
           </Field>
-          <Field label="Residente actual">
-            <Text value={form.resident} onChange={e => setForm({ ...form, resident: e.target.value })} placeholder="Quien vive en el apartamento" />
+          <Field label="Residente / ocupante actual">
+            <Text value={form.resident} onChange={e => setForm({ ...form, resident: e.target.value })} placeholder="Ej. María Gómez" />
           </Field>
           <Field label="Saldo">
             <Text type="number" min="0" step="0.01" value={form.balance} onChange={e => setForm({ ...form, balance: e.target.value })} />
@@ -947,6 +947,9 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
               <option>En mantenimiento</option>
             </select>
           </Field>
+        </div>
+        <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+          Ejemplo: <b>Juan Pérez</b> puede ser propietario legal y <b>María Gómez</b> residente actual. Si el propietario también vive en el apartamento, escribes el mismo nombre en ambos campos.
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar apartamento"}</Btn>
