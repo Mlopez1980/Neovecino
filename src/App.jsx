@@ -50,30 +50,223 @@ const seedResidents = [
   { id: "usr-3", apt: "201", name: "Carlos Rivera", dni: "0801-1978-00000", email: "carlos@email.com", phone: "9999-2222", type: "Inquilino", status: "Activo", notes: "Contrato vigente" },
 ];
 
-function Card({ children, className = "" }) { return <div className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>{children}</div>; }
+function Card({ children, className = "" }) {
+  return (
+    <div className={`rounded-[28px] border border-slate-200/80 bg-white/95 p-5 shadow-soft ${className}`}>
+      {children}
+    </div>
+  );
+}
+
 function Btn({ children, onClick, variant = "primary", className = "" }) {
-  const bg = variant === "secondary" ? BRAND.steel : variant === "danger" ? BRAND.black : variant === "outline" ? BRAND.white : BRAND.red;
-  const color = variant === "outline" ? BRAND.black : BRAND.white;
-  const border = variant === "outline" ? `1px solid ${BRAND.steel}` : "1px solid transparent";
-  return <button type="button" onClick={onClick} style={{ backgroundColor: bg, color, border }} className={`rounded-xl px-4 py-2 text-sm font-bold hover:opacity-90 active:scale-95 ${className}`}>{children}</button>;
+  const styles = {
+    primary: {
+      background: `linear-gradient(135deg, ${BRAND.red}, #b91c1c)`,
+      color: BRAND.white,
+      border: "1px solid transparent",
+    },
+    secondary: {
+      background: BRAND.steel,
+      color: BRAND.white,
+      border: "1px solid transparent",
+    },
+    danger: {
+      background: BRAND.black,
+      color: BRAND.white,
+      border: "1px solid transparent",
+    },
+    outline: {
+      background: BRAND.white,
+      color: BRAND.black,
+      border: `1px solid ${BRAND.steel}`,
+    },
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={styles[variant] || styles.primary}
+      className={`rounded-2xl px-4 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:opacity-95 active:scale-95 ${className}`}
+    >
+      {children}
+    </button>
+  );
 }
+
 function Badge({ children, tone = "default" }) {
-  const cls = tone === "good" ? "bg-emerald-100 text-emerald-700" : tone === "bad" ? "bg-rose-100 text-rose-700" : tone === "warn" ? "bg-amber-100 text-amber-700" : tone === "blue" ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-700";
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${cls}`}>{children}</span>;
+  const cls =
+    tone === "good"
+      ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
+      : tone === "bad"
+      ? "bg-rose-100 text-rose-700 ring-rose-200"
+      : tone === "warn"
+      ? "bg-amber-100 text-amber-700 ring-amber-200"
+      : tone === "blue"
+      ? "bg-sky-100 text-sky-700 ring-sky-200"
+      : "bg-slate-100 text-slate-700 ring-slate-200";
+
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ring-1 ${cls}`}>
+      {children}
+    </span>
+  );
 }
-function Title({ icon, title, sub }) { return <div className="mb-4 flex gap-3"><div className="rounded-2xl p-2 text-white" style={{ backgroundColor: BRAND.red }}>{icon}</div><div><h2 className="text-xl font-black">{title}</h2><p className="text-sm" style={{ color: BRAND.steel }}>{sub}</p></div></div>; }
-function Field({ label, children }) { return <label className="text-sm font-bold">{label}{children}</label>; }
-const Text = (p) => <input {...p} className={`mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 ${p.className || ""}`} />;
-const DateField = (p) => <input type="date" {...p} className={`mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 ${p.className || ""}`} />;
-function Powered() { return <div className="flex items-center gap-3"><div className="rounded-xl bg-white p-2 shadow-sm"><b style={{ color: BRAND.steel }}>H</b><b className="mx-1" style={{ color: BRAND.red }}>⌂</b><b style={{ color: BRAND.steel }}>C</b></div><div><div className="font-black">NeoVecino</div><div className="text-xs font-bold" style={{ color: BRAND.steel }}>Powered by <span style={{ color: BRAND.red }}>Honduras Constructores</span></div></div></div>; }
+
+function Title({ icon, title, sub }) {
+  return (
+    <div className="mb-5 flex items-center gap-4">
+      <div
+        className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl text-white shadow-md"
+        style={{ background: `linear-gradient(135deg, ${BRAND.red}, #991b1b)` }}
+      >
+        {icon}
+      </div>
+      <div>
+        <h2 className="text-2xl font-black tracking-tight text-slate-950">{title}</h2>
+        <p className="text-sm font-medium text-slate-500">{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="text-sm font-black text-slate-700">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+const Text = (p) => (
+  <input
+    {...p}
+    className={`mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100 ${p.className || ""}`}
+  />
+);
+
+const DateField = (p) => (
+  <input
+    type="date"
+    {...p}
+    className={`mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100 ${p.className || ""}`}
+  />
+);
+
+function Powered() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <b style={{ color: BRAND.steel }}>H</b>
+        <b className="mx-1" style={{ color: BRAND.red }}>⌂</b>
+        <b style={{ color: BRAND.steel }}>C</b>
+      </div>
+      <div>
+        <div className="font-black leading-4 text-slate-950">NeoVecino</div>
+        <div className="text-xs font-bold text-slate-500">
+          Powered by <span style={{ color: BRAND.red }}>Honduras Constructores</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BuildingBar({ role, buildings, selectedBuilding, setSelectedBuilding, building }) {
   const canSwitchBuilding = role === "admin";
-  return <Card className="mb-4"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><div className="text-xs font-bold uppercase tracking-wide text-slate-500">{canSwitchBuilding ? "Edificio activo" : "Mi edificio"}</div><div className="text-xl font-black">{building?.name}</div><div className="text-sm text-slate-500">{building?.address} · {building?.units} unidades</div></div>{canSwitchBuilding ? <select className="rounded-xl border border-slate-300 px-3 py-2 font-bold" value={selectedBuilding} onChange={e => setSelectedBuilding(e.target.value)}>{buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select> : <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-600">Acceso limitado a este edificio</div>}</div></Card>;
+
+  return (
+    <Card className="mb-5 overflow-hidden">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="mb-1 text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+            {canSwitchBuilding ? "Edificio activo" : "Mi edificio"}
+          </div>
+          <div className="text-2xl font-black text-slate-950">{building?.name}</div>
+          <div className="mt-1 text-sm font-medium text-slate-500">
+            {building?.address} · {building?.units} unidades
+          </div>
+        </div>
+
+        {canSwitchBuilding ? (
+          <select
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-black text-slate-800 outline-none focus:border-red-500 focus:ring-4 focus:ring-red-100"
+            value={selectedBuilding}
+            onChange={(e) => setSelectedBuilding(e.target.value)}
+          >
+            {buildings.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        ) : (
+          <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-600">
+            Acceso limitado a este edificio
+          </div>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 function Login({ onLogin }) {
-  const roles = [["resident", "Residente", "👤"], ["admin", "Administración", "🏢"], ["guard", "Guardia", "🛡️"]];
-  return <div className="min-h-screen px-4 py-8 text-white" style={{ background: `linear-gradient(135deg, ${BRAND.black}, ${BRAND.steel})` }}><div className="mx-auto max-w-5xl"><div className="mb-8 text-center"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl text-3xl" style={{ backgroundColor: BRAND.red }}>🏢</div><h1 className="text-4xl font-black">NeoVecino</h1><p className="mt-3 text-slate-200">Demo estable para administrar condominios.</p><div className="mt-6 flex justify-center"><Powered /></div></div><div className="grid gap-4 md:grid-cols-3">{roles.map(([key, label, icon]) => <button key={key} onClick={() => onLogin(key)} className="rounded-3xl border border-white/10 bg-white/10 p-6 text-left shadow-xl transition hover:-translate-y-1"><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-2xl" style={{ backgroundColor: BRAND.red }}>{icon}</div><h2 className="text-2xl font-bold">Entrar como {label}</h2><div className="mt-6 rounded-2xl bg-slate-950/60 px-4 py-3 text-sm">Demo sin contraseña</div></button>)}</div></div></div>;
+  const roles = [
+    ["resident", "Residente", "👤", "Consultar pagos, visitas, reservas y documentos."],
+    ["admin", "Administración", "🏢", "Gestionar edificios, residentes, reservas y pagos."],
+    ["guard", "Guardia", "🛡️", "Validar QR, registrar entradas y tomar fotos de placas."],
+  ];
+
+  return (
+    <div
+      className="min-h-screen px-4 py-10 text-white"
+      style={{
+        background:
+          `radial-gradient(circle at top left, rgba(255,0,0,.35), transparent 28%), linear-gradient(135deg, ${BRAND.black}, ${BRAND.steel})`,
+      }}
+    >
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-10 grid gap-8 lg:grid-cols-[1fr_420px] lg:items-end">
+          <div>
+            <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white/90">
+              Administración inteligente de condominios
+            </div>
+            <h1 className="text-5xl font-black tracking-tight md:text-7xl">NeoVecino</h1>
+            <p className="mt-5 max-w-2xl text-lg font-medium text-slate-200">
+              Plataforma para residentes, administración y control de acceso en edificios residenciales.
+            </p>
+          </div>
+
+          <div className="rounded-[32px] border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur">
+            <Powered />
+            <div className="mt-5 rounded-3xl bg-black/25 p-4 text-sm text-slate-200">
+              Demo operativo con módulos de visitas QR, reservas, tickets, documentos y residentes.
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-3">
+          {roles.map(([key, label, icon, desc]) => (
+            <button
+              key={key}
+              onClick={() => onLogin(key)}
+              className="group rounded-[32px] border border-white/10 bg-white/10 p-6 text-left shadow-2xl backdrop-blur transition hover:-translate-y-1 hover:bg-white/15"
+            >
+              <div
+                className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl text-3xl shadow-lg"
+                style={{ background: `linear-gradient(135deg, ${BRAND.red}, #991b1b)` }}
+              >
+                {icon}
+              </div>
+              <h2 className="text-2xl font-black">Entrar como {label}</h2>
+              <p className="mt-3 min-h-[48px] text-sm font-medium text-slate-200">{desc}</p>
+              <div className="mt-6 rounded-2xl bg-black/35 px-4 py-3 text-sm font-black text-white transition group-hover:bg-black/50">
+                Demo sin contraseña →
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Shell({ role, setRole, active, setActive, children }) {
@@ -82,8 +275,66 @@ function Shell({ role, setRole, active, setActive, children }) {
     admin: [["home", "Dashboard", "⌂"], ["residents", "Residentes", "👥"], ["payments", "Pagos", "💳"], ["visits", "Visitas", "▦"], ["reservations", "Reservas", "📅"], ["tickets", "Tickets", "🔧"], ["docs", "Docs", "📄"]],
     guard: [["home", "Guardia", "🛡️"], ["visits", "Visitas", "📋"]],
   };
+
   const label = role === "admin" ? "Administración" : role === "guard" ? "Guardia" : "Residente";
-  return <div className="min-h-screen bg-slate-100"><header className="sticky top-0 z-20 border-b bg-white/95"><div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3"><div className="flex items-center gap-3"><div className="rounded-2xl px-3 py-2 text-white" style={{ backgroundColor: BRAND.red }}>🏢</div><div><b>NeoVecino</b><div className="text-xs" style={{ color: BRAND.steel }}>Modo {label}</div></div></div><div className="flex items-center gap-3"><div className="hidden md:block"><Powered /></div><Btn variant="secondary" onClick={() => setRole(null)}>↩ Salir</Btn></div></div></header><main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[230px_1fr]"><aside className="hidden rounded-3xl bg-white p-3 shadow-sm lg:block">{menus[role].map(([key, text, icon]) => <button key={key} onClick={() => setActive(key)} style={active === key ? { backgroundColor: BRAND.black, color: BRAND.white } : { color: BRAND.steel }} className="mb-1 flex w-full gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold"><span>{icon}</span>{text}</button>)}</aside><section>{children}</section></main><nav className="fixed bottom-0 left-0 right-0 z-30 overflow-x-auto border-t bg-white p-2 lg:hidden"><div className="flex min-w-max gap-1">{menus[role].map(([key, text, icon]) => <button key={key} onClick={() => setActive(key)} style={active === key ? { backgroundColor: BRAND.black, color: BRAND.white } : { color: BRAND.steel }} className="min-w-[76px] rounded-2xl px-2 py-2 text-[10px] font-bold"><div>{icon}</div>{text}</button>)}</div></nav></div>;
+
+  return (
+    <div className="min-h-screen bg-slate-100">
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl text-white shadow-md"
+              style={{ background: `linear-gradient(135deg, ${BRAND.red}, #991b1b)` }}
+            >
+              🏢
+            </div>
+            <div>
+              <b className="text-lg font-black text-slate-950">NeoVecino</b>
+              <div className="text-xs font-bold text-slate-500">Modo {label}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden md:block"><Powered /></div>
+            <Btn variant="secondary" onClick={() => setRole(null)}>↩ Salir</Btn>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto grid max-w-7xl gap-5 px-4 py-5 lg:grid-cols-[250px_1fr]">
+        <aside className="hidden rounded-[28px] border border-slate-200 bg-white/95 p-3 shadow-soft lg:block">
+          {menus[role].map(([key, text, icon]) => (
+            <button
+              key={key}
+              onClick={() => setActive(key)}
+              style={active === key ? { backgroundColor: BRAND.black, color: BRAND.white } : { color: BRAND.steel }}
+              className="mb-1 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black transition hover:bg-slate-100"
+            >
+              <span className="text-lg">{icon}</span>{text}
+            </button>
+          ))}
+        </aside>
+
+        <section>{children}</section>
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 z-30 overflow-x-auto border-t border-slate-200 bg-white/95 p-2 backdrop-blur lg:hidden">
+        <div className="flex min-w-max gap-1">
+          {menus[role].map(([key, text, icon]) => (
+            <button
+              key={key}
+              onClick={() => setActive(key)}
+              style={active === key ? { backgroundColor: BRAND.black, color: BRAND.white } : { color: BRAND.steel }}
+              className="min-w-[76px] rounded-2xl px-2 py-2 text-[10px] font-black"
+            >
+              <div className="text-lg">{icon}</div>{text}
+            </button>
+          ))}
+        </div>
+      </nav>
+    </div>
+  );
 }
 
 function HomePage({ role, apt, apartments, visits, tickets, reservations }) {
