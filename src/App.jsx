@@ -611,4 +611,5 @@ const [dataError, setDataError] = useState("");
     <BuildingBar role={role} buildings={buildings} selectedBuilding={selectedBuilding} setSelectedBuilding={setSelectedBuilding} building={building} />
     {pages[active] || pages.home}
   </Shell>
-);
+  );
+}
