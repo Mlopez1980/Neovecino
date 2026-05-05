@@ -594,10 +594,21 @@ const [dataError, setDataError] = useState("");
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
   };
 
-  return (
-    <Shell role={role} setRole={setRole} active={active} setActive={setActive}>
-      <BuildingBar role={role} buildings={buildings} selectedBuilding={selectedBuilding} setSelectedBuilding={setSelectedBuilding} building={building} />
-      {pages[active] || pages.home}
-    </Shell>
-  );
-}
+ return (
+  <Shell role={role} setRole={setRole} active={active} setActive={setActive}>
+    {loadingData && (
+      <div className="mb-4 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700">
+        Cargando datos desde Supabase...
+      </div>
+    )}
+
+    {dataError && (
+      <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+        {dataError}
+      </div>
+    )}
+
+    <BuildingBar role={role} buildings={buildings} selectedBuilding={selectedBuilding} setSelectedBuilding={setSelectedBuilding} building={building} />
+    {pages[active] || pages.home}
+  </Shell>
+);
