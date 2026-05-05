@@ -19,10 +19,10 @@ const lps = (n) => `L.${Number(n || 0).toLocaleString("en-US", { minimumFraction
 const timeNow = () => new Date().toLocaleTimeString("es-HN", { hour: "2-digit", minute: "2-digit" });
 
 const seedApartments = [
-  { id: 1, number: "101", level: "Nivel 1", owner: "Marco López", balance: 125, status: "Ocupado" },
-  { id: 2, number: "102", level: "Nivel 1", owner: "Ana Martínez", balance: 0, status: "Ocupado" },
-  { id: 3, number: "201", level: "Nivel 2", owner: "Carlos Rivera", balance: 250, status: "Ocupado" },
-  { id: 4, number: "202", level: "Nivel 2", owner: "Lucía Gómez", balance: 0, status: "Vacío" },
+  { id: 1, number: "101", level: "Nivel 1", owner: "Marco López", resident: "Marco López", balance: 125, status: "Ocupado" },
+  { id: 2, number: "102", level: "Nivel 1", owner: "Ana Martínez", resident: "Ana Martínez", balance: 0, status: "Ocupado" },
+  { id: 3, number: "201", level: "Nivel 2", owner: "Carlos Rivera", resident: "Carlos Rivera", balance: 250, status: "Ocupado" },
+  { id: 4, number: "202", level: "Nivel 2", owner: "Lucía Gómez", resident: "", balance: 0, status: "Vacío" },
 ];
 const seedPayments = [
   { id: "pay-1", apt: "101", concept: "Cuota mantenimiento abril", amount: 125, status: "Pendiente", date: "2026-04-01" },
@@ -663,10 +663,11 @@ function Docs({ role, docs, setDocs }) {
 
 
 function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
-  // Usamos "Vacío" como estado base porque es el valor que ya existía en los datos originales.
-  // Esto evita errores si Supabase tiene una restricción/check que no acepta "Disponible".
-  const empty = { number: "", level: "Nivel 1", owner: "", balance: 0, status: "Vacío" };
+  // Propietario = dueño legal o contacto de referencia.
+  // Residente actual = persona que vive/usa el apartamento, que puede ser inquilino.
+  const empty = { number: "", level: "Nivel 1", owner: "", resident: "", balance: 0, status: "Vacío" };
   const [form, setForm] = useState(empty);
+  const [bulk, setBulk] = useState({ prefix: "", from: 1, quantity: 1, level: "Nivel 1", status: "Vacío" });
   const [editingId, setEditingId] = useState(null);
   const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
@@ -679,12 +680,13 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
   }, [selectedBuilding]);
 
   const filtered = apartments
-    .filter(a => `${a.number} ${a.level} ${a.owner} ${a.status}`.toLowerCase().includes(q.toLowerCase()))
+    .filter(a => `${a.number} ${a.level} ${a.owner} ${a.resident || ""} ${a.status}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => String(a.number).localeCompare(String(b.number), "es", { numeric: true }));
 
   const totalBalance = apartments.reduce((s, a) => s + Number(a.balance || 0), 0);
   const occupied = apartments.filter(a => a.status === "Ocupado").length;
   const available = apartments.filter(a => ["Disponible", "Vacío"].includes(a.status)).length;
+  const withResident = apartments.filter(a => String(a.resident || "").trim()).length;
 
   function clearForm() {
     setForm(empty);
@@ -699,6 +701,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       number: row.number,
       level: row.level,
       owner: row.owner,
+      resident: row.resident || "",
       balance: Number(row.balance || 0),
       status: row.status,
     };
@@ -710,7 +713,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       .join(" | ");
 
     console.error(`Error Supabase al ${action} apartamento:`, error);
-    alert(`No se pudo ${action} el apartamento en Supabase.\n\nDetalle técnico: ${detail || "Error desconocido"}`);
+    alert(`No se pudo ${action} el apartamento en Supabase.\n\nDetalle técnico: ${detail || "Error desconocido"}\n\nSi el error menciona la columna resident, ejecuta primero el SQL que te pasé para agregar ese campo.`);
   }
 
   async function save() {
@@ -724,6 +727,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       number: form.number.trim(),
       level: form.level.trim() || "Nivel 1",
       owner: form.owner.trim(),
+      resident: form.resident.trim(),
       balance: Number(form.balance || 0),
       status: form.status,
     };
@@ -733,7 +737,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
         .from("apartments")
         .update(payload)
         .eq("id", editingId)
-        .select("id, building_id, number, level, owner, balance, status")
+        .select("*")
         .single();
 
       if (error) {
@@ -747,6 +751,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
         number: payload.number,
         level: payload.level,
         owner: payload.owner,
+        resident: payload.resident,
         balance: payload.balance,
         status: payload.status,
       };
@@ -755,12 +760,10 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       setMsg("Apartamento actualizado.");
       setEditingId(null);
     } else {
-      // Importante: NO enviamos id manual. Supabase debe generarlo.
-      // Esto evita errores cuando id es bigint identity, uuid o serial.
       const { data, error } = await supabase
         .from("apartments")
         .insert([payload])
-        .select("id, building_id, number, level, owner, balance, status")
+        .select("*")
         .single();
 
       if (error) {
@@ -774,6 +777,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
         number: payload.number,
         level: payload.level,
         owner: payload.owner,
+        resident: payload.resident,
         balance: payload.balance,
         status: payload.status,
       };
@@ -785,11 +789,66 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
     setForm(empty);
   }
 
+  function buildApartmentName(prefix, n) {
+    const rawPrefix = String(prefix || "").trim();
+    return `${rawPrefix}${n}`;
+  }
+
+  async function createBulk() {
+    const qty = Math.max(1, Math.min(200, Number(bulk.quantity || 1)));
+    const start = Number(bulk.from || 1);
+    const level = String(bulk.level || "Nivel 1").trim() || "Nivel 1";
+    const status = bulk.status || "Vacío";
+
+    const payloads = Array.from({ length: qty }, (_, i) => ({
+      building_id: selectedBuilding,
+      number: buildApartmentName(bulk.prefix, start + i),
+      level,
+      owner: "",
+      resident: "",
+      balance: 0,
+      status,
+    }));
+
+    const existingNames = new Set(apartments.map(a => String(a.number).trim().toLowerCase()));
+    const cleanPayloads = payloads.filter(p => !existingNames.has(String(p.number).trim().toLowerCase()));
+
+    if (!cleanPayloads.length) {
+      setMsg("Los apartamentos de ese rango ya existen en este edificio.");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("apartments")
+      .insert(cleanPayloads)
+      .select("*");
+
+    if (error) {
+      showSupabaseError("crear en lote", error);
+      return;
+    }
+
+    const created = (data && data.length ? data.map(dbApartmentToApp) : cleanPayloads.map((p, i) => ({
+      id: `local-bulk-${Date.now()}-${i}`,
+      buildingId: selectedBuilding,
+      number: p.number,
+      level: p.level,
+      owner: p.owner,
+      resident: p.resident,
+      balance: p.balance,
+      status: p.status,
+    })));
+
+    setApartments([...created, ...apartments]);
+    setMsg(`Se crearon ${created.length} apartamento(s).`);
+  }
+
   function edit(a) {
     setForm({
       number: a.number || "",
       level: a.level || "Nivel 1",
       owner: a.owner || "",
+      resident: a.resident || "",
       balance: Number(a.balance || 0),
       status: a.status || "Vacío",
     });
@@ -828,21 +887,54 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       <div className="grid gap-4 md:grid-cols-4">
         <Card><p className="text-sm text-slate-500">Total unidades</p><h3 className="text-3xl font-black">{apartments.length}</h3></Card>
         <Card><p className="text-sm text-slate-500">Ocupados</p><h3 className="text-3xl font-black">{occupied}</h3></Card>
-        <Card><p className="text-sm text-slate-500">Disponibles / vacíos</p><h3 className="text-3xl font-black">{available}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Con residente</p><h3 className="text-3xl font-black">{withResident}</h3></Card>
         <Card><p className="text-sm text-slate-500">Mora del edificio</p><h3 className="text-3xl font-black">{usd(totalBalance)}</h3></Card>
       </div>
 
       <Card>
-        <h3 className="mb-3 font-bold">{editingId ? "Editar apartamento" : "Ingresar apartamento"}</h3>
+        <h3 className="mb-3 font-bold">Crear varios apartamentos</h3>
+        <div className="grid gap-3 md:grid-cols-5">
+          <Field label="Prefijo opcional">
+            <Text value={bulk.prefix} onChange={e => setBulk({ ...bulk, prefix: e.target.value })} placeholder="Ej. A-, PH-, Nivel1-" />
+          </Field>
+          <Field label="Desde">
+            <Text type="number" min="1" value={bulk.from} onChange={e => setBulk({ ...bulk, from: e.target.value })} />
+          </Field>
+          <Field label="Cantidad">
+            <Text type="number" min="1" max="200" value={bulk.quantity} onChange={e => setBulk({ ...bulk, quantity: e.target.value })} />
+          </Field>
+          <Field label="Nivel">
+            <Text value={bulk.level} onChange={e => setBulk({ ...bulk, level: e.target.value })} placeholder="Ej. Nivel 1" />
+          </Field>
+          <Field label="Estado">
+            <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={bulk.status} onChange={e => setBulk({ ...bulk, status: e.target.value })}>
+              <option>Vacío</option>
+              <option>Ocupado</option>
+              <option>Reservado</option>
+              <option>En mantenimiento</option>
+            </select>
+          </Field>
+        </div>
+        <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+          Ejemplo: prefijo <b>A-</b>, desde <b>1</b>, cantidad <b>5</b> crea: A-1, A-2, A-3, A-4 y A-5. Puedes dejar el prefijo vacío para crear 1, 2, 3...
+        </div>
+        <Btn onClick={createBulk} className="mt-4">+ Crear apartamentos en lote</Btn>
+      </Card>
+
+      <Card>
+        <h3 className="mb-3 font-bold">{editingId ? "Editar apartamento" : "Ingresar apartamento individual"}</h3>
         <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Número / nombre">
-            <Text value={form.number} onChange={e => setForm({ ...form, number: e.target.value })} placeholder="Ej. 101, A-01, PH-1" />
+          <Field label="Número / nombre del apartamento">
+            <Text value={form.number} onChange={e => setForm({ ...form, number: e.target.value })} placeholder="Ej. 1A, A-01, Penthouse, Local 1" />
           </Field>
           <Field label="Nivel">
             <Text value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} placeholder="Ej. Nivel 1" />
           </Field>
-          <Field label="Propietario / referencia">
-            <Text value={form.owner} onChange={e => setForm({ ...form, owner: e.target.value })} placeholder="Nombre del propietario" />
+          <Field label="Propietario">
+            <Text value={form.owner} onChange={e => setForm({ ...form, owner: e.target.value })} placeholder="Dueño legal o referencia" />
+          </Field>
+          <Field label="Residente actual">
+            <Text value={form.resident} onChange={e => setForm({ ...form, resident: e.target.value })} placeholder="Quien vive en el apartamento" />
           </Field>
           <Field label="Saldo">
             <Text type="number" min="0" step="0.01" value={form.balance} onChange={e => setForm({ ...form, balance: e.target.value })} />
@@ -866,7 +958,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
       <Card>
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <h3 className="font-bold">Apartamentos registrados</h3>
-          <input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por número, nivel, propietario o estado" />
+          <input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por número, nivel, propietario, residente o estado" />
         </div>
 
         {filtered.length === 0 ? (
@@ -884,6 +976,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
                 </div>
                 <div className="mt-3 text-sm">
                   <div><b>Propietario:</b> {a.owner || "-"}</div>
+                  <div><b>Residente:</b> {a.resident || "-"}</div>
                   <div><b>Saldo:</b> {usd(a.balance || 0)}</div>
                 </div>
                 <div className="mt-3 flex gap-2">
@@ -900,7 +993,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
 }
 
 function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding }) {
-  const empty = { apt: apartments[0]?.number || "101", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
+  const empty = { apt: "", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [q, setQ] = useState("");
@@ -995,7 +1088,7 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding 
     }
   }
 
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="👥" title="Residentes" sub="Registro de propietarios, inquilinos y contactos por apartamento" /><Card><h3 className="mb-3 font-bold">{editingId ? "Editar residente" : "Ingresar nuevo residente"}</h3><div className="grid gap-3 md:grid-cols-3"><Field label="Apartamento"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.apt} onChange={e => setForm({ ...form, apt: e.target.value })}>{apartments.map(a => <option key={a.id} value={a.number}>{a.number} · {a.level}</option>)}</select></Field><Field label="Nombre completo"><Text value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field><Field label="DNI / Identidad"><Text value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} /></Field><Field label="Correo"><Text type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field><Field label="Teléfono"><Text value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Tipo"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Propietario</option><option>Inquilino</option><option>Apoderado</option><option>Contacto autorizado</option></select></Field><Field label="Estado"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>Activo</option><option>Inactivo</option><option>Pendiente</option></select></Field><Field label="Notas"><Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field></div><div className="mt-4 flex flex-wrap gap-2"><Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar residente"}</Btn>{editingId && <Btn variant="outline" onClick={() => { setEditingId(null); setForm(empty); }}>Cancelar edición</Btn>}</div></Card><Card><div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><h3 className="font-bold">Residentes registrados</h3><input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre, apto, DNI o correo" /></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map(r => <div key={r.id} className="rounded-2xl border bg-slate-50 p-4"><div className="flex justify-between gap-3"><div><b>{r.name}</b><div className="text-sm text-slate-500">Apto {r.apt} · {r.type}</div></div><Badge tone={r.status === "Activo" ? "good" : r.status === "Pendiente" ? "warn" : "default"}>{r.status}</Badge></div><div className="mt-3 text-sm"><div><b>DNI:</b> {r.dni || "-"}</div><div><b>Correo:</b> {r.email || "-"}</div><div><b>Teléfono:</b> {r.phone || "-"}</div>{r.notes && <div><b>Notas:</b> {r.notes}</div>}</div><div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div></div>)}</div></Card></div>;
+  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="👥" title="Residentes" sub="Registro de propietarios, inquilinos y contactos por apartamento" /><Card><h3 className="mb-3 font-bold">{editingId ? "Editar residente" : "Ingresar nuevo residente"}</h3><div className="grid gap-3 md:grid-cols-3"><Field label="Apartamento / unidad"><Text list="resident-apartments-list" value={form.apt} onChange={e => setForm({ ...form, apt: e.target.value })} placeholder="Ej. 1A, A-01, Penthouse" /><datalist id="resident-apartments-list">{apartments.map(a => <option key={a.id} value={a.number}>{a.number} · {a.level}</option>)}</datalist></Field><Field label="Nombre completo"><Text value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field><Field label="DNI / Identidad"><Text value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} /></Field><Field label="Correo"><Text type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field><Field label="Teléfono"><Text value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Tipo"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Propietario</option><option>Inquilino</option><option>Apoderado</option><option>Contacto autorizado</option></select></Field><Field label="Estado"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>Activo</option><option>Inactivo</option><option>Pendiente</option></select></Field><Field label="Notas"><Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field></div><div className="mt-4 flex flex-wrap gap-2"><Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar residente"}</Btn>{editingId && <Btn variant="outline" onClick={() => { setEditingId(null); setForm(empty); }}>Cancelar edición</Btn>}</div></Card><Card><div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><h3 className="font-bold">Residentes registrados</h3><input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre, apto, DNI o correo" /></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map(r => <div key={r.id} className="rounded-2xl border bg-slate-50 p-4"><div className="flex justify-between gap-3"><div><b>{r.name}</b><div className="text-sm text-slate-500">Apto {r.apt} · {r.type}</div></div><Badge tone={r.status === "Activo" ? "good" : r.status === "Pendiente" ? "warn" : "default"}>{r.status}</Badge></div><div className="mt-3 text-sm"><div><b>DNI:</b> {r.dni || "-"}</div><div><b>Correo:</b> {r.email || "-"}</div><div><b>Teléfono:</b> {r.phone || "-"}</div>{r.notes && <div><b>Notas:</b> {r.notes}</div>}</div><div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div></div>)}</div></Card></div>;
 }
 
 export default function NeoVecinoMVP() {
@@ -1008,11 +1101,11 @@ export default function NeoVecinoMVP() {
 
   const [apartments, setApartments] = useState(() => [
     ...seedApartments.map(a => ({ ...a, buildingId: "canarias" })),
-    { id: 101, buildingId: "lomas", number: "101", level: "Nivel 1", owner: "Sofía Andino", balance: 0, status: "Ocupado" },
-    { id: 102, buildingId: "lomas", number: "102", level: "Nivel 1", owner: "Mario Castillo", balance: 75, status: "Ocupado" },
-    { id: 201, buildingId: "lomas", number: "201", level: "Nivel 2", owner: "Diana Flores", balance: 0, status: "Vacío" },
-    { id: 301, buildingId: "centro", number: "301", level: "Nivel 3", owner: "Roberto Díaz", balance: 160, status: "Ocupado" },
-    { id: 302, buildingId: "centro", number: "302", level: "Nivel 3", owner: "Karla Mejía", balance: 0, status: "Ocupado" },
+    { id: 101, buildingId: "lomas", number: "101", level: "Nivel 1", owner: "Sofía Andino", resident: "Sofía Andino", balance: 0, status: "Ocupado" },
+    { id: 102, buildingId: "lomas", number: "102", level: "Nivel 1", owner: "Mario Castillo", resident: "Mario Castillo", balance: 75, status: "Ocupado" },
+    { id: 201, buildingId: "lomas", number: "201", level: "Nivel 2", owner: "Diana Flores", resident: "", balance: 0, status: "Vacío" },
+    { id: 301, buildingId: "centro", number: "301", level: "Nivel 3", owner: "Roberto Díaz", resident: "Roberto Díaz", balance: 160, status: "Ocupado" },
+    { id: 302, buildingId: "centro", number: "302", level: "Nivel 3", owner: "Karla Mejía", resident: "Karla Mejía", balance: 0, status: "Ocupado" },
   ]);
 
   const [payments] = useState(() => [
@@ -1082,6 +1175,7 @@ export default function NeoVecinoMVP() {
           number: a.number,
           level: a.level,
           owner: a.owner,
+          resident: a.resident || "",
           balance: Number(a.balance || 0),
           status: a.status,
         }));
