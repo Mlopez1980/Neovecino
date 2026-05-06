@@ -456,10 +456,60 @@ function AvailabilityCalendar({ reservations, area, selectedDate, onSelectDate }
   const days = new Date(vy, vm, 0).getDate();
   const name = new Intl.DateTimeFormat("es-HN", { month: "long", year: "numeric" }).format(new Date(vy, vm - 1, 1));
   const cells = [...Array(first).fill(null), ...Array.from({ length: days }, (_, i) => `${vy}-${String(vm).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`)];
-  function status(date) { const rs = reservations.filter(r => r.area === area && r.date === date); if (rs.some(r => r.status === "Aprobada")) return "ocupado"; if (rs.some(r => r.status === "Pendiente")) return "pendiente"; return "disponible"; }
-  function move(delta) { const n = new Date(vy, vm - 1 + delta, 1); setView(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`); }
-  return <div className="rounded-2xl border bg-slate-50 p-3"><div className="mb-3 flex items-center justify-between"><button className="rounded-xl bg-white px-3 py-2 font-bold" onClick={() => move(-1)}>‹</button><b className="capitalize">{name}</b><button className="rounded-xl bg-white px-3 py-2 font-bold" onClick={() => move(1)}>›</button></div><div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-500">{["D","L","M","M","J","V","S"].map((d, i) => <div key={i}>{d}</div>)}</div><div className="grid grid-cols-7 gap-1">{cells.map((date, i) => { if (!date) return <div key={i} className="h-11" />; const s = status(date); const sel = date === selectedDate; const busy = s === "ocupado"; const bg = sel ? BRAND.black : busy ? "#fee2e2" : s === "pendiente" ? "#fef3c7" : "#dcfce7"; const color = sel ? BRAND.white : busy ? "#991b1b" : s === "pendiente" ? "#92400e" : "#166534"; return <button key={date} onClick={() => !busy && onSelectDate(date)} className="h-11 rounded-xl text-sm font-black" style={{ backgroundColor: bg, color }}>{Number(date.slice(-2))}</button>; })}</div><div className="mt-3 flex flex-wrap gap-2 text-xs font-bold"><span className="rounded-full bg-green-100 px-2 py-1 text-green-700">Disponible</span><span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">Pendiente</span><span className="rounded-full bg-rose-100 px-2 py-1 text-rose-700">Ocupado</span></div></div>;
+
+  function status(date) {
+    const rs = reservations.filter(r => r.area === area && r.date === date && !["Rechazada", "Cancelada"].includes(r.status));
+    if (rs.length > 0) return "con-reservas";
+    return "disponible";
+  }
+
+  function move(delta) {
+    const n = new Date(vy, vm - 1 + delta, 1);
+    setView(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`);
+  }
+
+  return (
+    <div className="rounded-2xl border bg-slate-50 p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <button className="rounded-xl bg-white px-3 py-2 font-bold" onClick={() => move(-1)}>‹</button>
+        <b className="capitalize">{name}</b>
+        <button className="rounded-xl bg-white px-3 py-2 font-bold" onClick={() => move(1)}>›</button>
+      </div>
+
+      <div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-500">
+        {["D", "L", "M", "M", "J", "V", "S"].map((d, i) => <div key={i}>{d}</div>)}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((date, i) => {
+          if (!date) return <div key={i} className="h-11" />;
+          const s = status(date);
+          const sel = date === selectedDate;
+          const bg = sel ? BRAND.black : s === "con-reservas" ? "#fef3c7" : "#dcfce7";
+          const color = sel ? BRAND.white : s === "con-reservas" ? "#92400e" : "#166534";
+
+          return (
+            <button
+              key={date}
+              onClick={() => onSelectDate(date)}
+              className="h-11 rounded-xl text-sm font-black"
+              style={{ backgroundColor: bg, color }}
+              title={s === "con-reservas" ? "Este día ya tiene reservas. Puedes seleccionar otro horario disponible." : "Disponible"}
+            >
+              {Number(date.slice(-2))}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+        <span className="rounded-full bg-green-100 px-2 py-1 text-green-700">Disponible</span>
+        <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">Con reservas</span>
+      </div>
+    </div>
+  );
 }
+
 function clock(v) {
   if (!v) return "";
   const [h, m] = v.split(":").map(Number);
@@ -549,6 +599,32 @@ function getScheduleText(area, date) {
   return `${clock(schedule.open)} - ${clock(schedule.close)}`;
 }
 
+function getReservationEndTime(r) {
+  if (!r?.start || !r?.hours) return "";
+  return addHours(r.start, Number(r.hours || 0));
+}
+
+function reservationBlocksCalendar(r) {
+  return r && !["Rechazada", "Cancelada"].includes(r.status);
+}
+
+function reservationOverlaps(r, area, date, start, hours) {
+  if (!reservationBlocksCalendar(r)) return false;
+  if (r.area !== area || r.date !== date) return false;
+  if (!r.start || !r.hours) return false;
+
+  const requestedStart = toMinutes(start);
+  const requestedEnd = toMinutes(addHours(start, hours));
+  const existingStart = toMinutes(r.start);
+  const existingEnd = toMinutes(getReservationEndTime(r));
+
+  return requestedStart < existingEnd && requestedEnd > existingStart;
+}
+
+function findOverlappingReservation(reservations, area, date, start, hours) {
+  return reservations.find(r => reservationOverlaps(r, area, date, start, hours));
+}
+
 function Reservations({ role, reservations, setReservations }) {
   const [form, setForm] = useState({ area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
   const [notice, setNotice] = useState("");
@@ -560,7 +636,23 @@ function Reservations({ role, reservations, setReservations }) {
   const safeHours = maxHours > 0 ? Math.min(Number(form.hours || 1), maxHours) : Number(form.hours || 1);
   const range = `${clock(form.start)} - ${clock(addHours(form.start, safeHours))}`;
   const rows = role === "resident" ? reservations.filter(r => r.apt === "101") : reservations;
-  const duplicate = reservations.some(r => r.apt === "101" && r.area === form.area && r.date === form.date && r.start === form.start && Number(r.hours) === Number(safeHours) && r.status !== "Rechazada");
+
+  const dayReservations = reservations
+    .filter(r => r.area === form.area && r.date === form.date && reservationBlocksCalendar(r))
+    .sort((a, b) => toMinutes(a.start || "00:00") - toMinutes(b.start || "00:00"));
+
+  const conflict = maxHours > 0
+    ? findOverlappingReservation(reservations, form.area, form.date, form.start, safeHours)
+    : null;
+
+  const duplicate = reservations.some(r =>
+    r.apt === "101" &&
+    r.area === form.area &&
+    r.date === form.date &&
+    r.start === form.start &&
+    Number(r.hours) === Number(safeHours) &&
+    reservationBlocksCalendar(r)
+  );
 
   useEffect(() => {
     if (maxHours > 0 && Number(form.hours) > maxHours) {
@@ -595,6 +687,11 @@ function Reservations({ role, reservations, setReservations }) {
 
     if (Number(form.hours) > maxHours) {
       setNotice(`Para esa hora solo puedes reservar un máximo de ${maxHours} hora(s).`);
+      return;
+    }
+
+    if (conflict) {
+      setNotice(`No se puede reservar. ${form.area} ya está ocupada de ${clock(conflict.start)} a ${clock(getReservationEndTime(conflict))}.`);
       return;
     }
 
@@ -676,10 +773,30 @@ function Reservations({ role, reservations, setReservations }) {
                 {form.area === "Coworking" && <span>Coworking no tiene cuota de limpieza ni depósito.</span>}
               </div>
 
+              {conflict && (
+                <div className="rounded-2xl bg-rose-50 p-3 text-sm font-bold text-rose-700">
+                  No disponible: ya existe una reserva de {clock(conflict.start)} a {clock(getReservationEndTime(conflict))} para esta misma área.
+                </div>
+              )}
+
+              {dayReservations.length > 0 && (
+                <div className="rounded-2xl bg-slate-50 p-3 text-sm">
+                  <b>Reservas existentes para {fmtDate(form.date)}:</b>
+                  <div className="mt-2 space-y-2">
+                    {dayReservations.map(r => (
+                      <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
+                        <span>Apto {r.apt} · {clock(r.start)} - {clock(getReservationEndTime(r))}</span>
+                        <Badge tone={r.status === "Aprobada" ? "good" : "warn"}>{r.status}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {notice && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{notice}</div>}
 
-              <Btn onClick={add} variant={maxHours <= 0 ? "secondary" : "primary"}>
-                {maxHours <= 0 ? "Horario no disponible" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
+              <Btn onClick={add} variant={maxHours <= 0 || conflict ? "secondary" : "primary"}>
+                {maxHours <= 0 ? "Horario no disponible" : conflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
               </Btn>
             </div>
           </div>
@@ -711,6 +828,7 @@ function Reservations({ role, reservations, setReservations }) {
     </div>
   );
 }
+
 
 function Tickets({ role, tickets, setTickets }) {
   const [text, setText] = useState("");
