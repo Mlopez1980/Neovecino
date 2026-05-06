@@ -17,6 +17,12 @@ const fmtDate = (v) => {
 const usd = (n) => new Intl.NumberFormat("es-HN", { style: "currency", currency: "USD" }).format(Number(n || 0));
 const lps = (n) => `L.${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const timeNow = () => new Date().toLocaleTimeString("es-HN", { hour: "2-digit", minute: "2-digit" });
+const fmtDateTime = (v) => {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  return new Intl.DateTimeFormat("es-HN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d).replace(".", "");
+};
 
 const seedApartments = [
   { id: 1, number: "101", level: "Nivel 1", owner: "Marco López", resident: "Marco López", balance: 125, status: "Ocupado" },
@@ -49,6 +55,9 @@ const seedResidents = [
   { id: "usr-1", apt: "101", name: "Marco López", dni: "0801-1980-00000", email: "marco@email.com", phone: "9999-0000", type: "Propietario", status: "Activo", notes: "Residente principal" },
   { id: "usr-2", apt: "102", name: "Ana Martínez", dni: "0801-1985-00000", email: "ana@email.com", phone: "9999-1111", type: "Propietario", status: "Activo", notes: "" },
   { id: "usr-3", apt: "201", name: "Carlos Rivera", dni: "0801-1978-00000", email: "carlos@email.com", phone: "9999-2222", type: "Inquilino", status: "Activo", notes: "Contrato vigente" },
+];
+const seedAnnouncements = [
+  { id: "ann-1", target: "Todos", apt: "", title: "Mantenimiento preventivo", message: "El sábado se realizará revisión preventiva en áreas comunes.", priority: "Normal", status: "Enviado", createdAt: "2026-05-01T09:00:00" },
 ];
 
 function Card({ children, className = "" }) {
@@ -338,10 +347,71 @@ function Shell({ role, setRole, active, setActive, children }) {
   );
 }
 
-function HomePage({ role, apt, apartments, visits, tickets, reservations }) {
-  if (role === "admin") return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="⌂" title="Dashboard" sub="Resumen administrativo" /><div className="grid gap-4 md:grid-cols-4"><Card><p className="text-sm text-slate-500">Apartamentos</p><h3 className="text-3xl font-black">{apartments.length}</h3></Card><Card><p className="text-sm text-slate-500">Mora total</p><h3 className="text-3xl font-black">{usd(apartments.reduce((s, a) => s + a.balance, 0))}</h3></Card><Card><p className="text-sm text-slate-500">Visitas</p><h3 className="text-3xl font-black">{visits.length}</h3></Card><Card><p className="text-sm text-slate-500">Tickets</p><h3 className="text-3xl font-black">{tickets.length}</h3></Card></div></div>;
+function HomePage({ role, apt, apartments, visits, tickets, reservations, announcements = [] }) {
+  if (role === "admin") {
+    return (
+      <div className="space-y-4 pb-24 lg:pb-0">
+        <Title icon="⌂" title="Dashboard" sub="Resumen administrativo" />
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card><p className="text-sm text-slate-500">Apartamentos</p><h3 className="text-3xl font-black">{apartments.length}</h3></Card>
+          <Card><p className="text-sm text-slate-500">Mora total</p><h3 className="text-3xl font-black">{usd(apartments.reduce((s, a) => s + a.balance, 0))}</h3></Card>
+          <Card><p className="text-sm text-slate-500">Visitas</p><h3 className="text-3xl font-black">{visits.length}</h3></Card>
+          <Card><p className="text-sm text-slate-500">Tickets</p><h3 className="text-3xl font-black">{tickets.length}</h3></Card>
+        </div>
+      </div>
+    );
+  }
+
   if (role === "guard") return <GuardPanel visits={visits} setVisits={() => {}} readOnly />;
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="⌂" title="Inicio" sub="Resumen rápido de tu apartamento" /><div className="grid gap-4 md:grid-cols-3"><Card><p className="text-sm text-slate-500">Apartamento</p><h3 className="text-3xl font-black">{apt.number}</h3><p className="text-sm text-slate-500">{apt.level} · Propietario: {apt.owner || "-"}<br />Residente: {apt.resident || apt.owner || "-"}</p></Card><Card><p className="text-sm text-slate-500">Saldo pendiente</p><h3 className="text-3xl font-black">{usd(apt.balance)}</h3></Card><Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => v.apt === apt.number).length}</h3></Card></div><div className="grid gap-4 md:grid-cols-2"><Card><h3 className="mb-3 font-bold">Tickets recientes</h3>{tickets.filter(t => t.apt === apt.number).map(t => <div key={t.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{t.title}</b><div className="text-sm text-slate-500">{fmtDate(t.date)} · {t.status}</div></div>)}</Card><Card><h3 className="mb-3 font-bold">Reservas</h3>{reservations.filter(r => r.apt === apt.number).map(r => <div key={r.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{r.area}</b><div className="text-sm text-slate-500">{fmtDate(r.date)} · {r.time}</div></div>)}</Card></div></div>;
+
+  const visibleAnnouncements = announcements
+    .filter(a => a.status !== "Borrador")
+    .filter(a => a.target !== "Apartamento específico" || String(a.apt || "") === String(apt.number || ""))
+    .slice(0, 3);
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="⌂" title="Inicio" sub="Resumen rápido de tu apartamento" />
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <p className="text-sm text-slate-500">Apartamento</p>
+          <h3 className="text-3xl font-black">{apt.number}</h3>
+          <p className="text-sm text-slate-500">{apt.level} · Propietario: {apt.owner || "-"}<br />Residente: {apt.resident || apt.owner || "-"}</p>
+        </Card>
+        <Card><p className="text-sm text-slate-500">Saldo pendiente</p><h3 className="text-3xl font-black">{usd(apt.balance)}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => v.apt === apt.number).length}</h3></Card>
+      </div>
+
+      {visibleAnnouncements.length > 0 && (
+        <Card>
+          <h3 className="mb-3 font-bold">Anuncios recientes</h3>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleAnnouncements.map(a => (
+              <div key={a.id} className="rounded-2xl border bg-slate-50 p-4">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <b>{a.title}</b>
+                  <Badge tone={a.priority === "Urgente" ? "bad" : a.priority === "Importante" ? "warn" : "blue"}>{a.priority || "Normal"}</Badge>
+                </div>
+                <p className="text-sm text-slate-600">{a.message}</p>
+                <div className="mt-2 text-xs font-bold text-slate-400">{fmtDateTime(a.createdAt)}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <h3 className="mb-3 font-bold">Tickets recientes</h3>
+          {tickets.filter(t => t.apt === apt.number).map(t => <div key={t.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{t.title}</b><div className="text-sm text-slate-500">{fmtDate(t.date)} · {t.status}</div></div>)}
+        </Card>
+        <Card>
+          <h3 className="mb-3 font-bold">Reservas</h3>
+          {reservations.filter(r => r.apt === apt.number).map(r => <div key={r.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{r.area}</b><div className="text-sm text-slate-500">{fmtDate(r.date)} · {r.time}</div></div>)}
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 function Payments({ role, payments, apartments }) {
@@ -995,12 +1065,111 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
   );
 }
 
-function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding }) {
+function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding, announcements = [], setAnnouncements }) {
   const empty = { apt: "", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
+  const emptyAnnouncement = { target: "Todos", apt: "", title: "", message: "", priority: "Normal" };
+
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [q, setQ] = useState("");
+  const [annForm, setAnnForm] = useState(emptyAnnouncement);
+  const [annQ, setAnnQ] = useState("");
+  const [annMsg, setAnnMsg] = useState("");
+
   const filtered = residents.filter(r => `${r.apt} ${r.name} ${r.dni} ${r.email}`.toLowerCase().includes(q.toLowerCase()));
+  const filteredAnnouncements = announcements
+    .filter(a => `${a.title} ${a.message} ${a.target} ${a.apt} ${a.priority}`.toLowerCase().includes(annQ.toLowerCase()))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  function dbAnnouncementToApp(row) {
+    return {
+      id: row.id,
+      buildingId: row.building_id,
+      target: row.target,
+      apt: row.apt || "",
+      title: row.title,
+      message: row.message,
+      priority: row.priority || "Normal",
+      status: row.status || "Enviado",
+      createdAt: row.created_at,
+    };
+  }
+
+  function showAnnouncementError(action, error) {
+    const detail = [error?.message, error?.details, error?.hint]
+      .filter(Boolean)
+      .join(" | ");
+
+    console.error(`Error Supabase al ${action} anuncio:`, error);
+    alert(`No se pudo ${action} el anuncio en Supabase.\n\nDetalle técnico: ${detail || "Error desconocido"}\n\nSi el error menciona la tabla announcements o políticas RLS, ejecuta el SQL que te pasé para crear la tabla de anuncios.`);
+  }
+
+  async function sendAnnouncement() {
+    if (!annForm.title.trim() || !annForm.message.trim()) {
+      setAnnMsg("Ingresa título y mensaje del anuncio.");
+      return;
+    }
+
+    if (annForm.target === "Apartamento específico" && !annForm.apt.trim()) {
+      setAnnMsg("Selecciona o escribe el apartamento destino.");
+      return;
+    }
+
+    const payload = {
+      building_id: selectedBuilding,
+      target: annForm.target,
+      apt: annForm.target === "Apartamento específico" ? annForm.apt.trim() : "",
+      title: annForm.title.trim(),
+      message: annForm.message.trim(),
+      priority: annForm.priority,
+      status: "Enviado",
+    };
+
+    const { data, error } = await supabase
+      .from("announcements")
+      .insert([payload])
+      .select("*")
+      .single();
+
+    if (error) {
+      showAnnouncementError("enviar", error);
+      return;
+    }
+
+    const created = data ? dbAnnouncementToApp(data) : {
+      id: `ann-local-${Date.now()}`,
+      buildingId: selectedBuilding,
+      target: payload.target,
+      apt: payload.apt,
+      title: payload.title,
+      message: payload.message,
+      priority: payload.priority,
+      status: payload.status,
+      createdAt: new Date().toISOString(),
+    };
+
+    setAnnouncements([created, ...announcements]);
+    setAnnForm(emptyAnnouncement);
+    setAnnMsg("Anuncio enviado y publicado para los residentes seleccionados.");
+  }
+
+  async function removeAnnouncement(id) {
+    const ok = window.confirm("¿Eliminar este anuncio?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("announcements")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      showAnnouncementError("eliminar", error);
+      return;
+    }
+
+    setAnnouncements(announcements.filter((a) => a.id !== id));
+    setAnnMsg("Anuncio eliminado.");
+  }
 
   async function save() {
     if (!form.name.trim() || !form.apt.trim()) return;
@@ -1091,7 +1260,142 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding 
     }
   }
 
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="👥" title="Residentes" sub="Registro de propietarios, inquilinos y contactos por apartamento" /><Card><h3 className="mb-3 font-bold">{editingId ? "Editar residente" : "Ingresar nuevo residente"}</h3><div className="grid gap-3 md:grid-cols-3"><Field label="Apartamento / unidad"><Text list="resident-apartments-list" value={form.apt} onChange={e => setForm({ ...form, apt: e.target.value })} placeholder="Ej. 1A, A-01, Penthouse" /><datalist id="resident-apartments-list">{apartments.map(a => <option key={a.id} value={a.number}>{a.number} · {a.level}</option>)}</datalist></Field><Field label="Nombre completo"><Text value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field><Field label="DNI / Identidad"><Text value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} /></Field><Field label="Correo"><Text type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field><Field label="Teléfono"><Text value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Tipo"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Propietario</option><option>Inquilino</option><option>Apoderado</option><option>Contacto autorizado</option></select></Field><Field label="Estado"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>Activo</option><option>Inactivo</option><option>Pendiente</option></select></Field><Field label="Notas"><Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field></div><div className="mt-4 flex flex-wrap gap-2"><Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar residente"}</Btn>{editingId && <Btn variant="outline" onClick={() => { setEditingId(null); setForm(empty); }}>Cancelar edición</Btn>}</div></Card><Card><div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><h3 className="font-bold">Residentes registrados</h3><input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre, apto, DNI o correo" /></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map(r => <div key={r.id} className="rounded-2xl border bg-slate-50 p-4"><div className="flex justify-between gap-3"><div><b>{r.name}</b><div className="text-sm text-slate-500">Apto {r.apt} · {r.type}</div></div><Badge tone={r.status === "Activo" ? "good" : r.status === "Pendiente" ? "warn" : "default"}>{r.status}</Badge></div><div className="mt-3 text-sm"><div><b>DNI:</b> {r.dni || "-"}</div><div><b>Correo:</b> {r.email || "-"}</div><div><b>Teléfono:</b> {r.phone || "-"}</div>{r.notes && <div><b>Notas:</b> {r.notes}</div>}</div><div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div></div>)}</div></Card></div>;
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="👥" title="Residentes" sub="Registro de propietarios, inquilinos, contactos y anuncios del edificio" />
+
+      <Card>
+        <h3 className="mb-3 font-bold">Enviar anuncio a residentes</h3>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Destinatarios">
+            <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={annForm.target} onChange={e => setAnnForm({ ...annForm, target: e.target.value })}>
+              <option>Todos</option>
+              <option>Propietarios</option>
+              <option>Residentes actuales</option>
+              <option>Apartamento específico</option>
+            </select>
+          </Field>
+          {annForm.target === "Apartamento específico" && (
+            <Field label="Apartamento destino">
+              <Text list="announcement-apartments-list" value={annForm.apt} onChange={e => setAnnForm({ ...annForm, apt: e.target.value })} placeholder="Ej. 1A, 101, PH-1" />
+              <datalist id="announcement-apartments-list">{apartments.map(a => <option key={a.id} value={a.number}>{a.number} · {a.level}</option>)}</datalist>
+            </Field>
+          )}
+          <Field label="Prioridad">
+            <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={annForm.priority} onChange={e => setAnnForm({ ...annForm, priority: e.target.value })}>
+              <option>Normal</option>
+              <option>Importante</option>
+              <option>Urgente</option>
+            </select>
+          </Field>
+          <Field label="Título">
+            <Text value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })} placeholder="Ej. Corte de agua programado" />
+          </Field>
+        </div>
+        <label className="mt-3 block text-sm font-black text-slate-700">
+          Mensaje del anuncio
+          <textarea
+            className="mt-1 min-h-[120px] w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+            value={annForm.message}
+            onChange={e => setAnnForm({ ...annForm, message: e.target.value })}
+            placeholder="Escribe aquí el mensaje que verá el residente..."
+          />
+        </label>
+        <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+          Este envío publica el anuncio dentro de la app. Luego podemos conectar correo, WhatsApp o notificaciones push.
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Btn onClick={sendAnnouncement}>📣 Enviar anuncio</Btn>
+          <Btn variant="outline" onClick={() => { setAnnForm(emptyAnnouncement); setAnnMsg(""); }}>Limpiar</Btn>
+        </div>
+        {annMsg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{annMsg}</div>}
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h3 className="font-bold">Anuncios enviados</h3>
+          <input className="rounded-xl border px-3 py-2 text-sm" value={annQ} onChange={e => setAnnQ(e.target.value)} placeholder="Buscar anuncio" />
+        </div>
+        {filteredAnnouncements.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">Aún no hay anuncios enviados para este edificio.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filteredAnnouncements.map(a => (
+              <div key={a.id} className="rounded-2xl border bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <b>{a.title}</b>
+                    <div className="mt-1 text-xs font-bold text-slate-400">{fmtDateTime(a.createdAt)}</div>
+                  </div>
+                  <Badge tone={a.priority === "Urgente" ? "bad" : a.priority === "Importante" ? "warn" : "blue"}>{a.priority || "Normal"}</Badge>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">{a.message}</p>
+                <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-500">
+                  Destino: {a.target === "Apartamento específico" ? `Apartamento ${a.apt}` : a.target}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Btn variant="danger" className="px-3 py-1.5" onClick={() => removeAnnouncement(a.id)}>Eliminar</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="mb-3 font-bold">{editingId ? "Editar residente" : "Ingresar nuevo residente"}</h3>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Apartamento / unidad">
+            <Text list="resident-apartments-list" value={form.apt} onChange={e => setForm({ ...form, apt: e.target.value })} placeholder="Ej. 1A, A-01, Penthouse" />
+            <datalist id="resident-apartments-list">{apartments.map(a => <option key={a.id} value={a.number}>{a.number} · {a.level}</option>)}</datalist>
+          </Field>
+          <Field label="Nombre completo"><Text value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
+          <Field label="DNI / Identidad"><Text value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} /></Field>
+          <Field label="Correo"><Text type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Teléfono"><Text value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
+          <Field label="Tipo">
+            <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+              <option>Propietario</option>
+              <option>Inquilino</option>
+              <option>Apoderado</option>
+              <option>Contacto autorizado</option>
+            </select>
+          </Field>
+          <Field label="Estado">
+            <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+              <option>Activo</option>
+              <option>Inactivo</option>
+              <option>Pendiente</option>
+            </select>
+          </Field>
+          <Field label="Notas"><Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Agregar residente"}</Btn>
+          {editingId && <Btn variant="outline" onClick={() => { setEditingId(null); setForm(empty); }}>Cancelar edición</Btn>}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h3 className="font-bold">Residentes registrados</h3>
+          <input className="rounded-xl border px-3 py-2 text-sm" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre, apto, DNI o correo" />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map(r => (
+            <div key={r.id} className="rounded-2xl border bg-slate-50 p-4">
+              <div className="flex justify-between gap-3">
+                <div><b>{r.name}</b><div className="text-sm text-slate-500">Apto {r.apt} · {r.type}</div></div>
+                <Badge tone={r.status === "Activo" ? "good" : r.status === "Pendiente" ? "warn" : "default"}>{r.status}</Badge>
+              </div>
+              <div className="mt-3 text-sm"><div><b>DNI:</b> {r.dni || "-"}</div><div><b>Correo:</b> {r.email || "-"}</div><div><b>Teléfono:</b> {r.phone || "-"}</div>{r.notes && <div><b>Notas:</b> {r.notes}</div>}</div>
+              <div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 export default function NeoVecinoMVP() {
@@ -1149,6 +1453,10 @@ export default function NeoVecinoMVP() {
     { id: "usr-c-1", buildingId: "centro", apt: "301", name: "Roberto Díaz", dni: "0801-1975-00000", email: "roberto@email.com", phone: "9999-5555", type: "Propietario", status: "Activo", notes: "" },
   ]);
 
+  const [announcements, setAllAnnouncements] = useState(() => [
+    ...seedAnnouncements.map(a => ({ ...a, buildingId: "canarias" })),
+  ]);
+
   useEffect(() => {
     async function loadCoreData() {
       setLoadingData(true);
@@ -1199,6 +1507,29 @@ export default function NeoVecinoMVP() {
         if (dbBuildings.length) setBuildings(dbBuildings);
         if (dbApartments.length) setApartments(dbApartments);
         if (dbResidents.length) setAllResidents(dbResidents);
+
+        const announcementsResult = await supabase
+          .from("announcements")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (!announcementsResult.error) {
+          const dbAnnouncements = (announcementsResult.data || []).map((a) => ({
+            id: a.id,
+            buildingId: a.building_id,
+            target: a.target,
+            apt: a.apt || "",
+            title: a.title,
+            message: a.message,
+            priority: a.priority || "Normal",
+            status: a.status || "Enviado",
+            createdAt: a.created_at,
+          }));
+
+          if (dbAnnouncements.length) setAllAnnouncements(dbAnnouncements);
+        } else {
+          console.warn("No se pudieron cargar anuncios desde Supabase:", announcementsResult.error);
+        }
       } catch (error) {
         console.error("Error cargando datos desde Supabase:", error);
         setDataError("No se pudieron cargar los datos desde Supabase. La app está usando datos demo.");
@@ -1220,6 +1551,7 @@ export default function NeoVecinoMVP() {
   const scopedTickets = tickets.filter(belongs);
   const scopedDocs = docs.filter(belongs);
   const scopedResidents = residents.filter(belongs);
+  const scopedAnnouncements = announcements.filter(belongs);
   const apt = scopedApartments.find(a => a.number === "101") || scopedApartments[0] || seedApartments[0];
 
   const scopedSetter = setter => nextList => {
@@ -1234,9 +1566,9 @@ export default function NeoVecinoMVP() {
   }
 
   const pages = {
-    home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} />,
+    home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
-    residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} />,
+    residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} />,
     visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} />,
