@@ -841,9 +841,203 @@ function Reservations({ role, reservations, setReservations }) {
 
 function Tickets({ role, tickets, setTickets }) {
   const [text, setText] = useState("");
-  const rows = role === "resident" ? tickets.filter(t => t.apt === "101") : tickets;
-  function add() { if (!text.trim()) return; setTickets([{ id: `tic-${Date.now()}`, apt: "101", title: text, status: "Abierto", date: todayISO() }, ...tickets]); setText(""); }
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="🔧" title="Mantenimiento" sub="Tickets y seguimiento" />{role === "resident" && <Card><div className="flex gap-3"><input className="flex-1 rounded-xl border px-3 py-2" value={text} onChange={e => setText(e.target.value)} placeholder="Describe el problema" /><Btn onClick={add}>Crear</Btn></div></Card>}<Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{rows.map(t => <div key={t.id} className="rounded-2xl border bg-slate-50 p-4"><b>{t.title}</b><div className="text-sm text-slate-500">Apto {t.apt} · {fmtDate(t.date)}</div><div className="mt-2"><Badge tone="blue">{t.status}</Badge></div></div>)}</div></Card></div>;
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
+
+  const baseRows = role === "resident" ? tickets.filter(t => t.apt === "101") : tickets;
+
+  const rows = baseRows.filter(t => {
+    const matchesText = `${t.apt} ${t.title} ${t.status}`.toLowerCase().includes(q.toLowerCase());
+    const matchesStatus = statusFilter === "Todos" || t.status === statusFilter;
+    return matchesText && matchesStatus;
+  });
+
+  function add() {
+    if (!text.trim()) return;
+
+    setTickets([
+      {
+        id: `tic-${Date.now()}`,
+        apt: "101",
+        title: text,
+        status: "Abierto",
+        date: todayISO(),
+      },
+      ...tickets,
+    ]);
+
+    setText("");
+  }
+
+  function updateStatus(id, status) {
+    setTickets(
+      tickets.map(t =>
+        t.id === id
+          ? { ...t, status, updatedAt: todayISO() }
+          : t
+      )
+    );
+  }
+
+  function tone(status) {
+    if (status === "Finalizado") return "good";
+    if (status === "En proceso") return "blue";
+    if (status === "Abierto") return "warn";
+    return "default";
+  }
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title
+        icon="🔧"
+        title="Mantenimiento"
+        sub={role === "admin" ? "Gestión de tickets y seguimiento" : "Tickets y seguimiento"}
+      />
+
+      {role === "resident" && (
+        <Card>
+          <h3 className="mb-3 font-bold">Crear nuevo ticket</h3>
+          <div className="flex flex-col gap-3 md:flex-row">
+            <input
+              className="flex-1 rounded-xl border px-3 py-2"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Describe el problema"
+            />
+            <Btn onClick={add}>Crear ticket</Btn>
+          </div>
+        </Card>
+      )}
+
+      {role === "admin" && (
+        <Card>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-sm font-bold text-slate-500">Abiertos</p>
+              <h3 className="text-3xl font-black">
+                {tickets.filter(t => t.status === "Abierto").length}
+              </h3>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-sm font-bold text-slate-500">En proceso</p>
+              <h3 className="text-3xl font-black">
+                {tickets.filter(t => t.status === "En proceso").length}
+              </h3>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-sm font-bold text-slate-500">Finalizados</p>
+              <h3 className="text-3xl font-black">
+                {tickets.filter(t => t.status === "Finalizado").length}
+              </h3>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h3 className="font-bold">
+            {role === "admin" ? "Tickets registrados" : "Mis tickets"}
+          </h3>
+
+          <div className="flex flex-col gap-2 md:flex-row">
+            <input
+              className="rounded-xl border px-3 py-2 text-sm"
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Buscar por apto, estado o descripción"
+            />
+
+            <select
+              className="rounded-xl border px-3 py-2 text-sm"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+            >
+              <option>Todos</option>
+              <option>Abierto</option>
+              <option>En proceso</option>
+              <option>Finalizado</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map(t => (
+            <div key={t.id} className="rounded-2xl border bg-slate-50 p-4">
+              <div className="flex justify-between gap-3">
+                <div>
+                  <b>{t.title}</b>
+                  <div className="text-sm text-slate-500">
+                    Apto {t.apt} · {fmtDate(t.date)}
+                  </div>
+                </div>
+
+                <Badge tone={tone(t.status)}>{t.status}</Badge>
+              </div>
+
+              {t.updatedAt && (
+                <div className="mt-2 text-xs font-bold text-slate-400">
+                  Última actualización: {fmtDate(t.updatedAt)}
+                </div>
+              )}
+
+              {role === "admin" && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {t.status === "Abierto" && (
+                    <Btn
+                      className="px-3 py-1.5"
+                      onClick={() => updateStatus(t.id, "En proceso")}
+                    >
+                      Pasar a En proceso
+                    </Btn>
+                  )}
+
+                  {t.status === "En proceso" && (
+                    <Btn
+                      className="px-3 py-1.5"
+                      onClick={() => updateStatus(t.id, "Finalizado")}
+                    >
+                      Finalizar ticket
+                    </Btn>
+                  )}
+
+                  {t.status === "Finalizado" && (
+                    <Btn
+                      variant="outline"
+                      className="px-3 py-1.5"
+                      onClick={() => updateStatus(t.id, "Abierto")}
+                    >
+                      Reabrir
+                    </Btn>
+                  )}
+
+                  {t.status !== "Finalizado" && (
+                    <select
+                      className="rounded-xl border px-3 py-2 text-sm font-bold"
+                      value={t.status}
+                      onChange={e => updateStatus(t.id, e.target.value)}
+                    >
+                      <option>Abierto</option>
+                      <option>En proceso</option>
+                      <option>Finalizado</option>
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {!rows.length && (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+            No hay tickets para mostrar.
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 function Docs({ role, docs, setDocs }) {
