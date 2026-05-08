@@ -439,6 +439,9 @@ const emptyVisit = () => ({
   maxUses: 1,
   uses: 0,
   lastUse: "",
+  validFrom: todayISO(),
+  validTo: todayISO(),
+  peopleCount: 1,
 });
 
 function getVisitQrType(v) {
@@ -459,9 +462,36 @@ function getRemainingUses(v) {
   return Math.max(0, getVisitMaxUses(v) - getVisitUses(v));
 }
 
+function getVisitValidFrom(v) {
+  return v?.validFrom || v?.date || todayISO();
+}
+
+function getVisitValidTo(v) {
+  return v?.validTo || v?.date || todayISO();
+}
+
+function getVisitPeopleCount(v) {
+  return Math.max(1, Number(v?.peopleCount || 1));
+}
+
+function isTodayWithinVisitDates(v) {
+  const today = todayISO();
+  const from = getVisitValidFrom(v);
+  const to = getVisitValidTo(v);
+
+  return today >= from && today <= to;
+}
+
 function canUseVisitQr(v) {
   if (!v) {
     return { ok: false, message: "Código no encontrado." };
+  }
+
+  if (!isTodayWithinVisitDates(v)) {
+    return {
+      ok: false,
+      message: `Este código QR no está vigente hoy. Es válido del ${fmtDate(getVisitValidFrom(v))} al ${fmtDate(getVisitValidTo(v))}.`,
+    };
   }
 
   if (v.status === "Ingresó") {
@@ -506,15 +536,25 @@ function Visits({ role, visits, setVisits }) {
     setVisits(visits.map(v => v.id === id ? { ...v, ...patch } : v));
 
   function create() {
-    if (!form.visitor.trim()) return;
+    if (!form.visitor.trim()) {
+      alert("Ingresa el nombre del visitante o grupo.");
+      return;
+    }
+
+    if (form.validFrom > form.validTo) {
+      alert("La fecha inicial no puede ser posterior a la fecha final.");
+      return;
+    }
 
     const id = `VST-${Math.floor(100000 + Math.random() * 900000)}`;
     const qrType = form.qrType || "Un solo uso";
     const maxUses = qrType === "Un solo uso" ? 1 : Math.max(2, Number(form.maxUses || 2));
+    const peopleCount = Math.max(1, Number(form.peopleCount || 1));
 
     const next = {
       ...form,
       id,
+      date: form.validFrom,
       status: "Pendiente",
       entryTime: "",
       exitTime: "",
@@ -522,6 +562,9 @@ function Visits({ role, visits, setVisits }) {
       maxUses,
       uses: 0,
       lastUse: "",
+      peopleCount,
+      validFrom: form.validFrom,
+      validTo: form.validTo,
     };
 
     setVisits([next, ...visits]);
@@ -545,10 +588,11 @@ function Visits({ role, visits, setVisits }) {
             <h3 className="mb-3 font-bold">Crear autorización</h3>
 
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Visitante">
+              <Field label="Visitante o grupo">
                 <Text
                   value={form.visitor}
                   onChange={e => setForm({ ...form, visitor: e.target.value })}
+                  placeholder="Ej. María Gómez / Familia Pérez"
                 />
               </Field>
 
@@ -562,7 +606,24 @@ function Visits({ role, visits, setVisits }) {
                   <option>Proveedor</option>
                   <option>Delivery</option>
                   <option>Huésped</option>
+                  <option>Grupo autorizado</option>
                 </select>
+              </Field>
+
+              <Field label="Cantidad de personas">
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+                  value={form.peopleCount}
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      peopleCount: Math.max(1, Number(e.target.value || 1)),
+                    })
+                  }
+                />
               </Field>
 
               <Field label="Identidad">
@@ -572,17 +633,32 @@ function Visits({ role, visits, setVisits }) {
                 />
               </Field>
 
-              <Field label="Fecha">
+              <Field label="Válido desde">
                 <DateField
-                  value={form.date}
-                  onChange={e => setForm({ ...form, date: e.target.value })}
+                  value={form.validFrom}
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      validFrom: e.target.value,
+                      date: e.target.value,
+                      validTo: form.validTo < e.target.value ? e.target.value : form.validTo,
+                    })
+                  }
                 />
               </Field>
 
-              <Field label="Horario">
+              <Field label="Válido hasta">
+                <DateField
+                  value={form.validTo}
+                  onChange={e => setForm({ ...form, validTo: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Horario permitido">
                 <Text
                   value={form.time}
                   onChange={e => setForm({ ...form, time: e.target.value })}
+                  placeholder="Ej. 2:00 p.m. - 6:00 p.m."
                 />
               </Field>
 
@@ -639,8 +715,10 @@ function Visits({ role, visits, setVisits }) {
             <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
               <b>Regla del QR:</b>{" "}
               {form.qrType === "Un solo uso"
-                ? "Este código QR quedará como predeterminado de un solo uso. Después de registrar una entrada, no podrá usarse nuevamente."
-                : `Este código QR podrá utilizarse hasta ${form.maxUses} veces. El guardia deberá registrar salida antes de permitir una nueva entrada.`}
+                ? `Este código QR será de un solo uso y solo será válido del ${fmtDate(form.validFrom)} al ${fmtDate(form.validTo)}.`
+                : `Este código QR podrá utilizarse hasta ${form.maxUses} veces, únicamente del ${fmtDate(form.validFrom)} al ${fmtDate(form.validTo)}.`}
+              <br />
+              <b>Personas autorizadas:</b> {form.peopleCount}
             </div>
 
             <Btn onClick={create} className="mt-4">▦ Generar QR</Btn>
@@ -653,14 +731,18 @@ function Visits({ role, visits, setVisits }) {
                 <QR value={selectedVisit.id} />
                 <div className="mt-3 font-mono font-black">{selectedVisit.id}</div>
                 <p className="text-sm text-slate-500">{selectedVisit.visitor}</p>
+
                 <div className="mt-3">
                   <Badge tone={getVisitQrType(selectedVisit) === "Un solo uso" ? "warn" : "blue"}>
                     {getVisitQrType(selectedVisit)}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs font-bold text-slate-500">
-                  Usos disponibles: {getRemainingUses(selectedVisit)} de {getVisitMaxUses(selectedVisit)}
-                </p>
+
+                <div className="mt-3 rounded-2xl bg-white p-3 text-xs font-bold text-slate-600">
+                  <div>Usos disponibles: {getRemainingUses(selectedVisit)} de {getVisitMaxUses(selectedVisit)}</div>
+                  <div>Válido: {fmtDate(getVisitValidFrom(selectedVisit))} al {fmtDate(getVisitValidTo(selectedVisit))}</div>
+                  <div>Personas autorizadas: {getVisitPeopleCount(selectedVisit)}</div>
+                </div>
               </div>
             </Card>
           )}
@@ -705,7 +787,7 @@ function VisitCard({ v, role, update }) {
         </Badge>
       </div>
 
-      <div className="mt-2 text-sm text-slate-600">{fmtDate(v.date)} · {v.time}</div>
+      <div className="mt-2 text-sm text-slate-600">{fmtDate(getVisitValidFrom(v))} al {fmtDate(getVisitValidTo(v))} · {v.time}</div>
 
       {v.plate && <div className="mt-1 text-sm"><b>Placa:</b> {v.plate}</div>}
       {v.notes && <div className="mt-1 text-sm"><b>Obs.:</b> {v.notes}</div>}
@@ -714,6 +796,8 @@ function VisitCard({ v, role, update }) {
         <div><b>Tipo de QR:</b> {getVisitQrType(v)}</div>
         <div><b>Usos:</b> {getVisitUses(v)} de {getVisitMaxUses(v)}</div>
         <div><b>Disponibles:</b> {getRemainingUses(v)}</div>
+        <div><b>Vigencia:</b> {fmtDate(getVisitValidFrom(v))} al {fmtDate(getVisitValidTo(v))}</div>
+        <div><b>Personas autorizadas:</b> {getVisitPeopleCount(v)}</div>
         {v.lastUse && <div><b>Último uso:</b> {v.lastUse}</div>}
       </div>
 
@@ -815,9 +899,15 @@ function GuardPanel({ visits, setVisits }) {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-800">
-                Visita autorizada.
-              </div>
+              {isTodayWithinVisitDates(visit) ? (
+                <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-800">
+                  Visita autorizada. Código vigente para hoy.
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-amber-50 p-4 text-amber-800">
+                  Código encontrado, pero no está vigente hoy.
+                </div>
+              )}
 
               {message && (
                 <div className="rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-700">
@@ -833,6 +923,8 @@ function GuardPanel({ visits, setVisits }) {
                   <div><b>Tipo de QR:</b> {getVisitQrType(visit)}</div>
                   <div><b>Usos realizados:</b> {getVisitUses(visit)} de {getVisitMaxUses(visit)}</div>
                   <div><b>Usos disponibles:</b> {getRemainingUses(visit)}</div>
+                  <div><b>Vigencia:</b> {fmtDate(getVisitValidFrom(visit))} al {fmtDate(getVisitValidTo(visit))}</div>
+                  <div><b>Personas autorizadas:</b> {getVisitPeopleCount(visit)}</div>
                   {visit.lastUse && <div><b>Último uso:</b> {visit.lastUse}</div>}
                 </div>
 
@@ -888,6 +980,7 @@ function GuardPanel({ visits, setVisits }) {
     </div>
   );
 }
+
 
 function AvailabilityCalendar({ reservations, area, selectedDate, onSelectDate }) {
   const base = selectedDate || todayISO();
