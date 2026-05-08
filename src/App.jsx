@@ -353,6 +353,106 @@ function AuthLoading() {
   );
 }
 
+
+function ChangePasswordModal({ open, onClose }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  if (!open) return null;
+
+  async function save(e) {
+    e.preventDefault();
+    setMsg("");
+
+    if (password.length < 6) {
+      setMsg("La nueva contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMsg("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setPassword("");
+      setConfirmPassword("");
+      setMsg("Contraseña actualizada correctamente. En tu próximo inicio de sesión usa la nueva contraseña.");
+    } catch (error) {
+      console.error("Error cambiando contraseña:", error);
+      setMsg(error.message || "No se pudo cambiar la contraseña.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <form onSubmit={save} className="w-full max-w-md rounded-[28px] bg-white p-5 shadow-2xl">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-xl font-black text-slate-950">Cambiar contraseña</h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Sustituye la contraseña temporal por una contraseña propia.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-600">×</button>
+        </div>
+
+        <label className="block text-sm font-black text-slate-700">
+          Nueva contraseña
+          <input
+            type="password"
+            className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+        </label>
+
+        <label className="mt-3 block text-sm font-black text-slate-700">
+          Confirmar contraseña
+          <input
+            type="password"
+            className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+          />
+        </label>
+
+        {msg && (
+          <div className={`mt-4 rounded-2xl p-3 text-sm font-bold ${msg.includes("correctamente") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+            {msg}
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-2xl px-4 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60"
+            style={{ background: `linear-gradient(135deg, ${BRAND.red}, #b91c1c)` }}
+          >
+            {loading ? "Guardando..." : "Guardar contraseña"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700"
+          >
+            Cerrar
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function Shell({ role, active, setActive, children, onLogout, userProfile }) {
   const menus = {
   resident: [
@@ -380,6 +480,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
 };
 
   const label = role === "admin" ? "Administración" : role === "guard" ? "Guardia" : "Residente";
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -400,6 +501,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
 
           <div className="flex items-center gap-3">
             <div className="hidden md:block"><Powered /></div>
+            <Btn variant="outline" onClick={() => setShowPasswordModal(true)}>🔑 Contraseña</Btn>
             <Btn variant="secondary" onClick={onLogout}>↩ Cerrar sesión</Btn>
           </div>
         </div>
@@ -436,6 +538,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
           ))}
         </div>
       </nav>
+      <ChangePasswordModal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </div>
   );
 }
@@ -465,14 +568,16 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="⌂" title="Inicio" sub="Resumen rápido de tu apartamento" />
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <p className="text-sm text-slate-500">Apartamento</p>
           <h3 className="text-3xl font-black">{apt.number}</h3>
-          <p className="text-sm text-slate-500">{apt.level} · Propietario: {apt.owner || "-"}<br />Residente: {apt.resident || apt.owner || "-"}</p>
+          <p className="text-sm text-slate-500">
+            {apt.level ? `${apt.level} · ` : ""}Propietario: {apt.owner || "-"}<br />
+            Residente: {apt.resident || apt.owner || "-"}
+          </p>
         </Card>
-        <Card></Card>
-        <Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => v.apt === apt.number).length}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => String(v.apt) === String(apt.number)).length}</h3></Card>
       </div>
 
       {visibleAnnouncements.length > 0 && (
@@ -507,7 +612,7 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
   );
 }
 
-function Payments({ role, payments, apartments, aptNumber = "101" }) {
+function Payments({ role, payments, apartments, aptNumber = "" }) {
   const rows = role === "resident" ? payments.filter(p => String(p.apt) === String(aptNumber)) : payments;
   return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="💳" title={role === "resident" ? "Mi estado de cuenta" : "Pagos y saldos"} sub="Cuotas y pagos" /><Card><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-slate-500"><tr><th className="py-2">Apto</th><th>Concepto</th><th>Fecha</th><th>Monto</th><th>Estado</th></tr></thead><tbody>{rows.map(p => <tr key={p.id} className="border-t"><td className="py-3 font-bold">{p.apt}</td><td>{p.concept}</td><td>{fmtDate(p.date)}</td><td>{usd(p.amount)}</td><td><Badge tone={p.status === "Pagado" ? "good" : p.status === "Vencido" ? "bad" : "warn"}>{p.status}</Badge></td></tr>)}</tbody></table></div></Card></div>;
 }
@@ -618,8 +723,8 @@ function buildEntryPatch(v) {
   };
 }
 
-function Visits({ role, visits, setVisits, aptNumber = "101" }) {
-  const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "101" }));
+function Visits({ role, visits, setVisits, aptNumber = "" }) {
+  const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "" }));
   const [selected, setSelected] = useState(visits[0]?.id || "");
 
   const list = role === "resident" ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
@@ -646,7 +751,7 @@ function Visits({ role, visits, setVisits, aptNumber = "101" }) {
 
     const next = {
       ...form,
-      apt: aptNumber || form.apt || "101",
+      apt: aptNumber || form.apt || "",
       id,
       date: form.validFrom,
       status: "Pendiente",
@@ -663,7 +768,7 @@ function Visits({ role, visits, setVisits, aptNumber = "101" }) {
 
     setVisits([next, ...visits]);
     setSelected(id);
-    setForm({ ...emptyVisit(), apt: aptNumber || "101" });
+    setForm({ ...emptyVisit(), apt: aptNumber || "" });
   }
 
   if (role === "guard") return <GuardPanel visits={visits} setVisits={setVisits} />;
@@ -1254,7 +1359,7 @@ function findOverlappingReservation(reservations, area, date, start, hours) {
   return reservations.find(r => reservationOverlaps(r, area, date, start, hours));
 }
 
-function Reservations({ role, reservations, setReservations, aptNumber = "101" }) {
+function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
   const [form, setForm] = useState({ area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
   const [notice, setNotice] = useState("");
 
@@ -1334,7 +1439,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "101" }
 
     const r = {
       id: `res-${Date.now()}`,
-      apt: aptNumber || "101",
+      apt: aptNumber || "",
       area: form.area,
       date: form.date,
       start: form.start,
@@ -1468,7 +1573,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "101" }
 }
 
 
-function Tickets({ role, tickets, setTickets, aptNumber = "101" }) {
+function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
@@ -1487,7 +1592,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "101" }) {
     setTickets([
       {
         id: `tic-${Date.now()}`,
-        apt: aptNumber || "101",
+        apt: aptNumber || "",
         title: text,
         status: "Abierto",
         date: todayISO(),
@@ -2833,13 +2938,31 @@ export default function NeoVecinoMVP() {
     ]);
   }
 
+  function resolveBuildingId(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "canarias";
+
+    const byId = buildings.find(b => String(b.id).toLowerCase() === raw.toLowerCase());
+    if (byId) return byId.id;
+
+    const byName = buildings.find(b => String(b.name).toLowerCase() === raw.toLowerCase());
+    if (byName) return byName.id;
+
+    const known = raw.toLowerCase();
+    if (["torre élite", "torre elite", "elite"].includes(known)) return "canarias";
+    if (["torre infinito", "infinito"].includes(known)) return "centro";
+    if (["torre centurión", "torre centurion", "centurion", "centurión"].includes(known)) return "lomas";
+
+    return raw;
+  }
+
   function normalizeProfile(row, user) {
     return {
       id: row.id,
       email: row.email || user?.email || "",
       fullName: row.full_name || row.email || user?.email || "Usuario",
       role: row.role,
-      buildingId: row.building_id || "canarias",
+      buildingId: resolveBuildingId(row.building_id || "canarias"),
       apt: row.apt || "",
       status: row.status || "Activo",
     };
@@ -3096,9 +3219,21 @@ export default function NeoVecinoMVP() {
   const scopedDocs = docs.filter(belongs);
   const scopedResidents = residents.filter(belongs);
   const scopedAnnouncements = announcements.filter(belongs);
-  const residentAptNumber = userProfile?.apt || "101";
+  const residentAptNumber = String(userProfile?.apt || "").trim();
+  const residentApartmentFromDb = scopedApartments.find(a => String(a.number).trim().toLowerCase() === residentAptNumber.toLowerCase());
   const apt = role === "resident"
-    ? (scopedApartments.find(a => String(a.number) === String(residentAptNumber)) || scopedApartments[0] || seedApartments[0])
+    ? (
+        residentApartmentFromDb || {
+          id: `profile-${residentAptNumber || userProfile?.id || "resident"}`,
+          buildingId: selectedBuilding,
+          number: residentAptNumber || "Sin apartamento asignado",
+          level: "",
+          owner: "-",
+          resident: userProfile?.fullName || userProfile?.email || "Residente",
+          balance: 0,
+          status: "Asignado",
+        }
+      )
     : (scopedApartments.find(a => a.number === "101") || scopedApartments[0] || seedApartments[0]);
 
   const scopedSetter = setter => nextList => {
