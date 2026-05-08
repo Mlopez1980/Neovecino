@@ -425,26 +425,468 @@ function QR({ value }) {
   for (let y = 0; y < 19; y++) for (let x = 0; x < 19; x++) if ((x * 17 + y * 31 + seed) % 5 === 0 || (x < 5 && y < 5) || (x > 13 && y < 5) || (x < 5 && y > 13)) cells.push(<rect key={`${x}-${y}`} x={x * 10} y={y * 10} width="9" height="9" rx="2" fill="currentColor" />);
   return <svg width="190" height="190" viewBox="0 0 190 190" className="text-slate-900"><rect width="190" height="190" rx="16" fill="white" />{cells}</svg>;
 }
-const emptyVisit = () => ({ visitor: "", type: "Familiar", date: todayISO(), time: "2:00 p.m. - 6:00 p.m.", apt: "101", identity: "", plate: "", notes: "", platePhoto: "" });
+const emptyVisit = () => ({
+  visitor: "",
+  type: "Familiar",
+  date: todayISO(),
+  time: "2:00 p.m. - 6:00 p.m.",
+  apt: "101",
+  identity: "",
+  plate: "",
+  notes: "",
+  platePhoto: "",
+  qrType: "Un solo uso",
+  maxUses: 1,
+  uses: 0,
+  lastUse: "",
+});
+
+function getVisitQrType(v) {
+  return v?.qrType || "Un solo uso";
+}
+
+function getVisitMaxUses(v) {
+  const type = getVisitQrType(v);
+  if (type === "Un solo uso") return 1;
+  return Math.max(2, Number(v?.maxUses || 2));
+}
+
+function getVisitUses(v) {
+  return Math.max(0, Number(v?.uses || 0));
+}
+
+function getRemainingUses(v) {
+  return Math.max(0, getVisitMaxUses(v) - getVisitUses(v));
+}
+
+function canUseVisitQr(v) {
+  if (!v) {
+    return { ok: false, message: "Código no encontrado." };
+  }
+
+  if (v.status === "Ingresó") {
+    return {
+      ok: false,
+      message: "Esta visita ya registró entrada. Primero debe registrarse la salida antes de volver a usar el código.",
+    };
+  }
+
+  if (getRemainingUses(v) <= 0) {
+    const type = getVisitQrType(v);
+    return {
+      ok: false,
+      message:
+        type === "Un solo uso"
+          ? "Este código QR era de un solo uso y ya fue utilizado."
+          : "Este código QR ya no tiene usos disponibles.",
+    };
+  }
+
+  return { ok: true, message: "Código válido." };
+}
+
+function buildEntryPatch(v) {
+  const now = timeNow();
+  return {
+    status: "Ingresó",
+    entryTime: now,
+    lastUse: now,
+    uses: getVisitUses(v) + 1,
+  };
+}
+
 function Visits({ role, visits, setVisits }) {
   const [form, setForm] = useState(emptyVisit());
   const [selected, setSelected] = useState(visits[0]?.id || "");
+
   const list = role === "resident" ? visits.filter(v => v.apt === "101") : visits;
   const selectedVisit = visits.find(v => v.id === selected) || list[0];
-  const update = (id, patch) => setVisits(visits.map(v => v.id === id ? { ...v, ...patch } : v));
-  function create() { if (!form.visitor.trim()) return; const id = `VST-${Math.floor(100000 + Math.random() * 900000)}`; const next = { ...form, id, status: "Pendiente", entryTime: "", exitTime: "" }; setVisits([next, ...visits]); setSelected(id); setForm(emptyVisit()); }
+
+  const update = (id, patch) =>
+    setVisits(visits.map(v => v.id === id ? { ...v, ...patch } : v));
+
+  function create() {
+    if (!form.visitor.trim()) return;
+
+    const id = `VST-${Math.floor(100000 + Math.random() * 900000)}`;
+    const qrType = form.qrType || "Un solo uso";
+    const maxUses = qrType === "Un solo uso" ? 1 : Math.max(2, Number(form.maxUses || 2));
+
+    const next = {
+      ...form,
+      id,
+      status: "Pendiente",
+      entryTime: "",
+      exitTime: "",
+      qrType,
+      maxUses,
+      uses: 0,
+      lastUse: "",
+    };
+
+    setVisits([next, ...visits]);
+    setSelected(id);
+    setForm(emptyVisit());
+  }
+
   if (role === "guard") return <GuardPanel visits={visits} setVisits={setVisits} />;
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="▦" title={role === "resident" ? "Mis visitas QR" : "Control de visitas"} sub="Autorización y registro de entradas" />{role === "resident" && <div className="grid gap-4 lg:grid-cols-[1fr_320px]"><Card><h3 className="mb-3 font-bold">Crear autorización</h3><div className="grid gap-3 md:grid-cols-2"><Field label="Visitante"><Text value={form.visitor} onChange={e => setForm({ ...form, visitor: e.target.value })} /></Field><Field label="Tipo"><select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Familiar</option><option>Proveedor</option><option>Delivery</option><option>Huésped</option></select></Field><Field label="Identidad"><Text value={form.identity} onChange={e => setForm({ ...form, identity: e.target.value })} /></Field><Field label="Fecha"><DateField value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field><Field label="Horario"><Text value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} /></Field><Field label="Placa"><Text value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value.toUpperCase() })} /></Field><Field label="Observaciones"><Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field></div><Btn onClick={create} className="mt-4">▦ Generar QR</Btn></Card>{selectedVisit && <Card><h3 className="mb-3 font-bold">QR generado</h3><div className="rounded-3xl bg-slate-50 p-4 text-center"><QR value={selectedVisit.id} /><div className="mt-3 font-mono font-black">{selectedVisit.id}</div><p className="text-sm text-slate-500">{selectedVisit.visitor}</p></div></Card>}</div>}<Card><h3 className="mb-3 font-bold">Historial de visitas</h3><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{list.map(v => <VisitCard key={v.id} v={v} role={role} update={update} />)}</div></Card></div>;
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title
+        icon="▦"
+        title={role === "resident" ? "Mis visitas QR" : "Control de visitas"}
+        sub="Autorización y registro de entradas"
+      />
+
+      {role === "resident" && (
+        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <Card>
+            <h3 className="mb-3 font-bold">Crear autorización</h3>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Visitante">
+                <Text
+                  value={form.visitor}
+                  onChange={e => setForm({ ...form, visitor: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Tipo">
+                <select
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                  value={form.type}
+                  onChange={e => setForm({ ...form, type: e.target.value })}
+                >
+                  <option>Familiar</option>
+                  <option>Proveedor</option>
+                  <option>Delivery</option>
+                  <option>Huésped</option>
+                </select>
+              </Field>
+
+              <Field label="Identidad">
+                <Text
+                  value={form.identity}
+                  onChange={e => setForm({ ...form, identity: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Fecha">
+                <DateField
+                  value={form.date}
+                  onChange={e => setForm({ ...form, date: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Horario">
+                <Text
+                  value={form.time}
+                  onChange={e => setForm({ ...form, time: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Placa">
+                <Text
+                  value={form.plate}
+                  onChange={e => setForm({ ...form, plate: e.target.value.toUpperCase() })}
+                />
+              </Field>
+
+              <Field label="Tipo de código QR">
+                <select
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                  value={form.qrType}
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      qrType: e.target.value,
+                      maxUses: e.target.value === "Un solo uso" ? 1 : 5,
+                    })
+                  }
+                >
+                  <option>Un solo uso</option>
+                  <option>Varios usos</option>
+                </select>
+              </Field>
+
+              {form.qrType === "Varios usos" && (
+                <Field label="Cantidad máxima de usos">
+                  <input
+                    type="number"
+                    min="2"
+                    max="50"
+                    className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+                    value={form.maxUses}
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        maxUses: Math.max(2, Number(e.target.value || 2)),
+                      })
+                    }
+                  />
+                </Field>
+              )}
+
+              <Field label="Observaciones">
+                <Text
+                  value={form.notes}
+                  onChange={e => setForm({ ...form, notes: e.target.value })}
+                />
+              </Field>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+              <b>Regla del QR:</b>{" "}
+              {form.qrType === "Un solo uso"
+                ? "Este código QR quedará como predeterminado de un solo uso. Después de registrar una entrada, no podrá usarse nuevamente."
+                : `Este código QR podrá utilizarse hasta ${form.maxUses} veces. El guardia deberá registrar salida antes de permitir una nueva entrada.`}
+            </div>
+
+            <Btn onClick={create} className="mt-4">▦ Generar QR</Btn>
+          </Card>
+
+          {selectedVisit && (
+            <Card>
+              <h3 className="mb-3 font-bold">QR generado</h3>
+              <div className="rounded-3xl bg-slate-50 p-4 text-center">
+                <QR value={selectedVisit.id} />
+                <div className="mt-3 font-mono font-black">{selectedVisit.id}</div>
+                <p className="text-sm text-slate-500">{selectedVisit.visitor}</p>
+                <div className="mt-3">
+                  <Badge tone={getVisitQrType(selectedVisit) === "Un solo uso" ? "warn" : "blue"}>
+                    {getVisitQrType(selectedVisit)}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs font-bold text-slate-500">
+                  Usos disponibles: {getRemainingUses(selectedVisit)} de {getVisitMaxUses(selectedVisit)}
+                </p>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      <Card>
+        <h3 className="mb-3 font-bold">Historial de visitas</h3>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {list.map(v => (
+            <VisitCard key={v.id} v={v} role={role} update={update} />
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
 }
+
 function VisitCard({ v, role, update }) {
-  return <div className="rounded-2xl border bg-slate-50 p-4"><div className="flex justify-between gap-3"><div><b>{v.visitor}</b><div className="text-sm text-slate-500">Apto {v.apt} · {v.type}</div></div><Badge tone={v.status === "Ingresó" ? "blue" : v.status === "Salió" ? "default" : "warn"}>{v.status}</Badge></div><div className="mt-2 text-sm text-slate-600">{fmtDate(v.date)} · {v.time}</div>{v.plate && <div className="mt-1 text-sm"><b>Placa:</b> {v.plate}</div>}{v.notes && <div className="mt-1 text-sm"><b>Obs.:</b> {v.notes}</div>}<div className="mt-2 rounded-xl bg-white px-3 py-2 font-mono text-sm">{v.id}</div>{role !== "resident" && <div className="mt-3 flex flex-wrap gap-2"><Btn className="px-3 py-1.5" onClick={() => update(v.id, { status: "Ingresó", entryTime: timeNow() })}>Entrada</Btn><Btn variant="secondary" className="px-3 py-1.5" onClick={() => update(v.id, { status: "Salió", exitTime: timeNow() })}>Salida</Btn></div>}</div>;
+  function registerEntry() {
+    const check = canUseVisitQr(v);
+
+    if (!check.ok) {
+      alert(check.message);
+      return;
+    }
+
+    update(v.id, buildEntryPatch(v));
+  }
+
+  return (
+    <div className="rounded-2xl border bg-slate-50 p-4">
+      <div className="flex justify-between gap-3">
+        <div>
+          <b>{v.visitor}</b>
+          <div className="text-sm text-slate-500">Apto {v.apt} · {v.type}</div>
+        </div>
+
+        <Badge tone={v.status === "Ingresó" ? "blue" : v.status === "Salió" ? "default" : "warn"}>
+          {v.status}
+        </Badge>
+      </div>
+
+      <div className="mt-2 text-sm text-slate-600">{fmtDate(v.date)} · {v.time}</div>
+
+      {v.plate && <div className="mt-1 text-sm"><b>Placa:</b> {v.plate}</div>}
+      {v.notes && <div className="mt-1 text-sm"><b>Obs.:</b> {v.notes}</div>}
+
+      <div className="mt-3 rounded-xl bg-white p-3 text-xs">
+        <div><b>Tipo de QR:</b> {getVisitQrType(v)}</div>
+        <div><b>Usos:</b> {getVisitUses(v)} de {getVisitMaxUses(v)}</div>
+        <div><b>Disponibles:</b> {getRemainingUses(v)}</div>
+        {v.lastUse && <div><b>Último uso:</b> {v.lastUse}</div>}
+      </div>
+
+      <div className="mt-2 rounded-xl bg-white px-3 py-2 font-mono text-sm">{v.id}</div>
+
+      {role !== "resident" && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Btn className="px-3 py-1.5" onClick={registerEntry}>
+            Entrada
+          </Btn>
+
+          <Btn
+            variant="secondary"
+            className="px-3 py-1.5"
+            onClick={() => update(v.id, { status: "Salió", exitTime: timeNow() })}
+          >
+            Salida
+          </Btn>
+        </div>
+      )}
+    </div>
+  );
 }
+
 function GuardPanel({ visits, setVisits }) {
   const [code, setCode] = useState("VST-482913");
+  const [message, setMessage] = useState("");
+
   const visit = visits.find(v => v.id.toLowerCase() === code.toLowerCase());
-  const update = (patch) => visit && setVisits(visits.map(v => v.id === visit.id ? { ...v, ...patch } : v));
-  function photo(file) { if (!file) return; const reader = new FileReader(); reader.onload = () => update({ platePhoto: String(reader.result || "") }); reader.readAsDataURL(file); }
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="🛡️" title="Modo Guardia" sub="Validación de QR y control de acceso" /><div className="grid gap-4 lg:grid-cols-[1fr_420px]"><Card><h3 className="mb-3 font-bold">Buscar código</h3><div className="flex gap-3"><input className="flex-1 rounded-xl border px-3 py-2 font-mono" value={code} onChange={e => setCode(e.target.value)} /><Btn>Validar</Btn></div><div className="mt-5 rounded-3xl border-2 border-dashed bg-slate-50 p-8 text-center"><div className="text-6xl">▦</div><b>Aquí irá el escáner de cámara</b></div></Card><Card>{!visit ? <div className="rounded-2xl bg-rose-50 p-4 text-rose-700">Código no encontrado.</div> : <div className="space-y-3"><div className="rounded-2xl bg-emerald-50 p-4 text-emerald-800">Visita autorizada.</div><div className="rounded-2xl bg-slate-50 p-4"><div className="text-2xl font-black">{visit.visitor}</div><div className="text-slate-500">Apartamento {visit.apt}</div>{visit.notes && <div className="mt-3 rounded-xl border-l-4 bg-white px-3 py-2" style={{ borderColor: BRAND.red }}><b>Observación:</b><br />{visit.notes}</div>}<label className="mt-3 block text-xs font-bold">Placa observada<input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" value={visit.plate || ""} onChange={e => update({ plate: e.target.value.toUpperCase() })} /></label><label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white" style={{ backgroundColor: BRAND.red }}>📷 Tomar foto de placa<input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => photo(e.target.files?.[0])} /></label>{visit.platePhoto && <img src={visit.platePhoto} alt="Placa" className="mt-3 h-32 w-full rounded-xl object-cover" />}</div><div className="grid grid-cols-2 gap-2"><Btn onClick={() => update({ status: "Ingresó", entryTime: timeNow() })}>Entrada</Btn><Btn variant="secondary" onClick={() => update({ status: "Salió", exitTime: timeNow() })}>Salida</Btn></div></div>}</Card></div></div>;
+
+  function update(patch) {
+    if (!visit) return;
+    setVisits(visits.map(v => v.id === visit.id ? { ...v, ...patch } : v));
+  }
+
+  function photo(file) {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => update({ platePhoto: String(reader.result || "") });
+    reader.readAsDataURL(file);
+  }
+
+  function registerEntry() {
+    if (!visit) return;
+
+    const check = canUseVisitQr(visit);
+
+    if (!check.ok) {
+      setMessage(check.message);
+      return;
+    }
+
+    const nextUses = getVisitUses(visit) + 1;
+    update(buildEntryPatch(visit));
+
+    setMessage(
+      `Entrada registrada correctamente. Usos disponibles restantes: ${Math.max(0, getVisitMaxUses(visit) - nextUses)}.`
+    );
+  }
+
+  function registerExit() {
+    if (!visit) return;
+    update({ status: "Salió", exitTime: timeNow() });
+    setMessage("Salida registrada correctamente.");
+  }
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="🛡️" title="Modo Guardia" sub="Validación de QR y control de acceso" />
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
+        <Card>
+          <h3 className="mb-3 font-bold">Buscar código</h3>
+
+          <div className="flex gap-3">
+            <input
+              className="flex-1 rounded-xl border px-3 py-2 font-mono"
+              value={code}
+              onChange={e => {
+                setCode(e.target.value);
+                setMessage("");
+              }}
+            />
+
+            <Btn>Validar</Btn>
+          </div>
+
+          <div className="mt-5 rounded-3xl border-2 border-dashed bg-slate-50 p-8 text-center">
+            <div className="text-6xl">▦</div>
+            <b>Aquí irá el escáner de cámara</b>
+          </div>
+        </Card>
+
+        <Card>
+          {!visit ? (
+            <div className="rounded-2xl bg-rose-50 p-4 text-rose-700">
+              Código no encontrado.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-800">
+                Visita autorizada.
+              </div>
+
+              {message && (
+                <div className="rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-700">
+                  {message}
+                </div>
+              )}
+
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="text-2xl font-black">{visit.visitor}</div>
+                <div className="text-slate-500">Apartamento {visit.apt}</div>
+
+                <div className="mt-3 rounded-xl bg-white p-3 text-sm">
+                  <div><b>Tipo de QR:</b> {getVisitQrType(visit)}</div>
+                  <div><b>Usos realizados:</b> {getVisitUses(visit)} de {getVisitMaxUses(visit)}</div>
+                  <div><b>Usos disponibles:</b> {getRemainingUses(visit)}</div>
+                  {visit.lastUse && <div><b>Último uso:</b> {visit.lastUse}</div>}
+                </div>
+
+                {visit.notes && (
+                  <div
+                    className="mt-3 rounded-xl border-l-4 bg-white px-3 py-2"
+                    style={{ borderColor: BRAND.red }}
+                  >
+                    <b>Observación:</b><br />{visit.notes}
+                  </div>
+                )}
+
+                <label className="mt-3 block text-xs font-bold">
+                  Placa observada
+                  <input
+                    className="mt-1 w-full rounded-xl border px-3 py-2 text-sm"
+                    value={visit.plate || ""}
+                    onChange={e => update({ plate: e.target.value.toUpperCase() })}
+                  />
+                </label>
+
+                <label
+                  className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white"
+                  style={{ backgroundColor: BRAND.red }}
+                >
+                  📷 Tomar foto de placa
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={e => photo(e.target.files?.[0])}
+                  />
+                </label>
+
+                {visit.platePhoto && (
+                  <img
+                    src={visit.platePhoto}
+                    alt="Placa"
+                    className="mt-3 h-32 w-full rounded-xl object-cover"
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Btn onClick={registerEntry}>Entrada</Btn>
+                <Btn variant="secondary" onClick={registerExit}>Salida</Btn>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 function AvailabilityCalendar({ reservations, area, selectedDate, onSelectDate }) {
