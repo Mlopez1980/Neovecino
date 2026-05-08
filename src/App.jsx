@@ -396,7 +396,7 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
           <h3 className="text-3xl font-black">{apt.number}</h3>
           <p className="text-sm text-slate-500">{apt.level} · Propietario: {apt.owner || "-"}<br />Residente: {apt.resident || apt.owner || "-"}</p>
         </Card>
-        <Card><p className="text-sm text-slate-500">Saldo pendiente</p><h3 className="text-3xl font-black">{usd(apt.balance)}</h3></Card>
+        <Card></Card>
         <Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => v.apt === apt.number).length}</h3></Card>
       </div>
 
