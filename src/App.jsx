@@ -2020,6 +2020,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
   const empty = {
     id: "",
     email: "",
+    password: "",
     fullName: "",
     role: "resident",
     buildingId: selectedBuilding || "canarias",
@@ -2032,6 +2033,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
   const [q, setQ] = useState("");
   const [buildingFilter, setBuildingFilter] = useState(selectedBuilding || "Todos");
   const [msg, setMsg] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const apartmentsForForm = apartments.filter(a => (a.buildingId || "canarias") === form.buildingId);
 
@@ -2045,6 +2047,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     setForm({
       id: "",
       email: "",
+      password: "",
       fullName: "",
       role: "resident",
       buildingId: selectedBuilding || "canarias",
@@ -2053,12 +2056,14 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     });
     setEditingId(null);
     setMsg("");
+    setSaving(false);
   }
 
   function edit(u) {
     setForm({
       id: u.id,
       email: u.email || "",
+      password: "",
       fullName: u.fullName || "",
       role: u.role || "resident",
       buildingId: u.buildingId || selectedBuilding || "canarias",
@@ -2069,31 +2074,27 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     setMsg("");
   }
 
+  function validateForm() {
+    if (!form.email.trim()) return "Debes ingresar el correo del usuario.";
+    if (!form.fullName.trim()) return "Debes ingresar el nombre completo del usuario.";
+    if (!editingId && !form.password.trim()) return "Debes ingresar una contraseña temporal.";
+    if (!editingId && form.password.trim().length < 6) return "La contraseña temporal debe tener al menos 6 caracteres.";
+    if (!["admin", "resident", "guard"].includes(form.role)) return "Selecciona un rol válido.";
+    if (!form.buildingId) return "Selecciona el edificio.";
+    if (form.role === "resident" && !form.apt.trim()) return "Para un residente debes asignar el apartamento.";
+    return "";
+  }
+
   async function save() {
     setMsg("");
 
-    if (!form.id.trim()) {
-      setMsg("Debes pegar el UID del usuario creado en Supabase Authentication.");
-      return;
-    }
-
-    if (!form.email.trim()) {
-      setMsg("Debes ingresar el correo del usuario.");
-      return;
-    }
-
-    if (!["admin", "resident", "guard"].includes(form.role)) {
-      setMsg("Selecciona un rol válido.");
-      return;
-    }
-
-    if (form.role === "resident" && !form.apt.trim()) {
-      setMsg("Para un residente debes asignar el apartamento.");
+    const validation = validateForm();
+    if (validation) {
+      setMsg(validation);
       return;
     }
 
     const payload = {
-      id: form.id.trim(),
       email: form.email.trim().toLowerCase(),
       full_name: form.fullName.trim(),
       role: form.role,
@@ -2101,6 +2102,8 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
       apt: form.role === "resident" ? form.apt.trim() : "",
       status: form.status || "Activo",
     };
+
+    setSaving(true);
 
     if (editingId) {
       const { error } = await supabase
@@ -2114,6 +2117,8 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
           status: payload.status,
         })
         .eq("id", editingId);
+
+      setSaving(false);
 
       if (error) {
         console.error(error);
@@ -2140,30 +2145,43 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
       return;
     }
 
-    const { error } = await supabase
-      .from("app_users")
-      .insert([payload]);
+    const { data, error } = await supabase.functions.invoke("create-app-user", {
+      body: {
+        ...payload,
+        password: form.password.trim(),
+      },
+    });
+
+    setSaving(false);
 
     if (error) {
       console.error(error);
-      setMsg(`No se pudo crear el perfil. Detalle: ${error.message}`);
+      setMsg(`No se pudo crear el usuario. Detalle: ${error.message || "Error al llamar la función create-app-user."}`);
       return;
     }
 
+    if (!data?.ok) {
+      console.error(data);
+      setMsg(`No se pudo crear el usuario. Detalle: ${data?.error || "Respuesta inválida de la función."}${data?.detail ? ` ${data.detail}` : ""}`);
+      return;
+    }
+
+    const created = data.user;
+
     setUsers([
       {
-        id: payload.id,
-        email: payload.email,
-        fullName: payload.full_name,
-        role: payload.role,
-        buildingId: payload.building_id,
-        apt: payload.apt,
-        status: payload.status,
+        id: created.id,
+        email: created.email,
+        fullName: created.full_name,
+        role: created.role,
+        buildingId: created.building_id,
+        apt: created.apt || "",
+        status: created.status || "Activo",
       },
       ...users,
     ]);
 
-    setMsg("Perfil creado correctamente. El usuario ya puede iniciar sesión si también existe en Authentication.");
+    setMsg("Usuario creado correctamente en Authentication y app_users. Ya puede iniciar sesión con la contraseña temporal.");
     resetForm();
   }
 
@@ -2226,7 +2244,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
 
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
-      <Title icon="🔐" title="Usuarios" sub="Perfiles de acceso por rol, edificio y apartamento" />
+      <Title icon="🔐" title="Usuarios" sub="Creación automática de accesos por rol, edificio y apartamento" />
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card><p className="text-sm text-slate-500">Usuarios activos</p><h3 className="text-3xl font-black">{activeUsers}</h3></Card>
@@ -2236,22 +2254,13 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
       </div>
 
       <Card>
-        <h3 className="mb-3 font-bold">{editingId ? "Editar perfil de usuario" : "Crear perfil de usuario"}</h3>
+        <h3 className="mb-3 font-bold">{editingId ? "Editar perfil de usuario" : "Crear usuario"}</h3>
 
-        <div className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">
-          <b>Importante:</b> primero crea el usuario en <b>Supabase → Authentication → Users</b>, copia su <b>UID</b> y luego crea aquí el perfil. La contraseña se administra en Authentication.
+        <div className="mb-4 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-800">
+          <b>Nuevo:</b> ya no necesitas copiar el UID. Al crear el usuario aquí, la app crea automáticamente el acceso en <b>Supabase Authentication</b> y el perfil en <b>app_users</b>.
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
-          <Field label="UID de Authentication">
-            <Text
-              value={form.id}
-              disabled={Boolean(editingId)}
-              onChange={e => setForm({ ...form, id: e.target.value })}
-              placeholder="Pega aquí el UID"
-            />
-          </Field>
-
           <Field label="Correo electrónico">
             <Text
               type="email"
@@ -2260,6 +2269,17 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
               placeholder="usuario@correo.com"
             />
           </Field>
+
+          {!editingId && (
+            <Field label="Contraseña temporal">
+              <Text
+                type="password"
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                placeholder="Mínimo 6 caracteres"
+              />
+            </Field>
+          )}
 
           <Field label="Nombre completo">
             <Text
@@ -2335,7 +2355,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Crear perfil"}</Btn>
+          <Btn onClick={save}>{saving ? "Guardando..." : editingId ? "Guardar cambios" : "+ Crear usuario"}</Btn>
           {editingId && <Btn variant="outline" onClick={resetForm}>Cancelar edición</Btn>}
         </div>
       </Card>
@@ -2395,7 +2415,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
           })}
         </div>
 
-        {!filtered.length && (
+        {filtered.length === 0 && (
           <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
             No hay usuarios para mostrar.
           </div>
