@@ -567,24 +567,38 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
 
   if (role === "guard") return <GuardPanel visits={visits} setVisits={() => {}} readOnly />;
 
+  const aptNumber = String(apt?.number || "");
+  const aptVisits = visits.filter(v => String(v.apt || "") === aptNumber);
+  const aptTickets = tickets.filter(t => String(t.apt || "") === aptNumber);
+  const aptReservations = reservations.filter(r => String(r.apt || "") === aptNumber);
+
   const visibleAnnouncements = announcements
     .filter(a => a.status !== "Borrador")
-    .filter(a => a.target !== "Apartamento específico" || String(a.apt || "") === String(apt.number || ""))
+    .filter(a => a.target !== "Apartamento específico" || String(a.apt || "") === aptNumber)
     .slice(0, 3);
 
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
-      <Title icon="⌂" title="Inicio" sub="Resumen rápido de tu apartamento" />
+      <Title
+        icon="⌂"
+        title="Inicio"
+        sub={role === "owner" ? "Resumen rápido de tu propiedad" : "Resumen rápido de tu apartamento"}
+      />
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <p className="text-sm text-slate-500">Apartamento</p>
-          <h3 className="text-3xl font-black">{apt.number}</h3>
+          <h3 className="text-3xl font-black">{aptNumber || "Sin apartamento asignado"}</h3>
           <p className="text-sm text-slate-500">
             {apt.level ? `${apt.level} · ` : ""}Propietario: {apt.owner || "-"}<br />
-            Residente: {apt.resident || apt.owner || "-"}
+            Residente: {apt.resident || "-"}
           </p>
         </Card>
-        <Card><p className="text-sm text-slate-500">Visitas registradas</p><h3 className="text-3xl font-black">{visits.filter(v => String(v.apt) === String(apt.number)).length}</h3></Card>
+
+        <Card>
+          <p className="text-sm text-slate-500">Visitas registradas</p>
+          <h3 className="text-3xl font-black">{aptVisits.length}</h3>
+        </Card>
       </div>
 
       {visibleAnnouncements.length > 0 && (
@@ -608,11 +622,34 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <h3 className="mb-3 font-bold">Tickets recientes</h3>
-          {tickets.filter(t => t.apt === apt.number).map(t => <div key={t.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{t.title}</b><div className="text-sm text-slate-500">{fmtDate(t.date)} · {t.status}</div></div>)}
+          {aptTickets.length ? (
+            aptTickets.map(t => (
+              <div key={t.id} className="mb-2 rounded-2xl bg-slate-50 p-3">
+                <b>{t.title}</b>
+                <div className="text-sm text-slate-500">{fmtDate(t.date)} · {t.status}</div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-500">
+              No hay tickets registrados para este apartamento.
+            </div>
+          )}
         </Card>
+
         <Card>
           <h3 className="mb-3 font-bold">Reservas</h3>
-          {reservations.filter(r => r.apt === apt.number).map(r => <div key={r.id} className="mb-2 rounded-2xl bg-slate-50 p-3"><b>{r.area}</b><div className="text-sm text-slate-500">{fmtDate(r.date)} · {r.time}</div></div>)}
+          {aptReservations.length ? (
+            aptReservations.map(r => (
+              <div key={r.id} className="mb-2 rounded-2xl bg-slate-50 p-3">
+                <b>{r.area}</b>
+                <div className="text-sm text-slate-500">{fmtDate(r.date)} · {r.time}</div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-500">
+              No hay reservas registradas para este apartamento.
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -731,11 +768,18 @@ function buildEntryPatch(v) {
 }
 
 function Visits({ role, visits, setVisits, aptNumber = "" }) {
+  const isResidentAccess = ["resident", "owner"].includes(role);
   const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "" }));
-  const [selected, setSelected] = useState(visits[0]?.id || "");
+  const [selected, setSelected] = useState("");
 
-  const list = ["resident", "owner"].includes(role) ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
-  const selectedVisit = visits.find(v => v.id === selected) || list[0];
+  const list = isResidentAccess ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
+  const selectedVisit = list.find(v => v.id === selected) || list[0];
+
+  useEffect(() => {
+    if (aptNumber) {
+      setForm(prev => ({ ...prev, apt: aptNumber }));
+    }
+  }, [aptNumber]);
 
   const update = (id, patch) =>
     setVisits(visits.map(v => v.id === id ? { ...v, ...patch } : v));
@@ -3232,19 +3276,30 @@ export default function NeoVecinoMVP() {
   const scopedResidents = residents.filter(belongs);
   const scopedAnnouncements = announcements.filter(belongs);
   const residentAptNumber = String(userProfile?.apt || "").trim();
+  const profileName = userProfile?.fullName || userProfile?.email || "Usuario";
   const residentApartmentFromDb = scopedApartments.find(a => String(a.number).trim().toLowerCase() === residentAptNumber.toLowerCase());
   const apt = ["resident", "owner"].includes(role)
     ? (
-        residentApartmentFromDb || {
-          id: `profile-${residentAptNumber || userProfile?.id || "resident"}`,
-          buildingId: selectedBuilding,
-          number: residentAptNumber || "Sin apartamento asignado",
-          level: "",
-          owner: "-",
-          resident: userProfile?.fullName || userProfile?.email || "Residente",
-          balance: 0,
-          status: "Asignado",
-        }
+        residentApartmentFromDb
+          ? {
+              ...residentApartmentFromDb,
+              owner: role === "owner" && !String(residentApartmentFromDb.owner || "").trim()
+                ? profileName
+                : residentApartmentFromDb.owner,
+              resident: role === "resident" && !String(residentApartmentFromDb.resident || "").trim()
+                ? profileName
+                : residentApartmentFromDb.resident,
+            }
+          : {
+              id: `profile-${residentAptNumber || userProfile?.id || "resident"}`,
+              buildingId: selectedBuilding,
+              number: residentAptNumber || "Sin apartamento asignado",
+              level: "",
+              owner: role === "owner" ? profileName : "",
+              resident: role === "resident" ? profileName : "",
+              balance: 0,
+              status: "Asignado",
+            }
       )
     : (scopedApartments.find(a => a.number === "101") || scopedApartments[0] || seedApartments[0]);
 
