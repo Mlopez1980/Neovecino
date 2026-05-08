@@ -281,10 +281,28 @@ function Login({ onLogin }) {
 
 function Shell({ role, setRole, active, setActive, children }) {
   const menus = {
-    resident: [["home", "Inicio", "⌂"], ["payments", "Estado", "💳"], ["visits", "Visitas", "▦"], ["reservations", "Reservas", "📅"], ["tickets", "Tickets", "🔧"], ["docs", "Docs", "📄"]],
-    admin: [["home", "Dashboard", "⌂"], ["apartments", "Apartamentos", "🏠"], ["residents", "Residentes", "👥"], ["payments", "Pagos", "💳"], ["visits", "Visitas", "▦"], ["reservations", "Reservas", "📅"], ["tickets", "Tickets", "🔧"], ["docs", "Docs", "📄"]],
-    guard: [["home", "Guardia", "🛡️"], ["visits", "Visitas", "📋"]],
-  };
+  resident: [
+    ["home", "Inicio", "⌂"],
+    ["visits", "Visitas", "▦"],
+    ["reservations", "Reservas", "📅"],
+    ["tickets", "Tickets", "🔧"],
+    ["docs", "Docs", "📄"],
+  ],
+  admin: [
+    ["home", "Dashboard", "⌂"],
+    ["apartments", "Apartamentos", "🏠"],
+    ["residents", "Residentes", "👥"],
+    ["payments", "Pagos", "💳"],
+    ["visits", "Visitas", "▦"],
+    ["reservations", "Reservas", "📅"],
+    ["tickets", "Tickets", "🔧"],
+    ["docs", "Docs", "📄"],
+  ],
+  guard: [
+    ["home", "Guardia", "🛡️"],
+    ["visits", "Visitas", "📋"],
+  ],
+};
 
   const label = role === "admin" ? "Administración" : role === "guard" ? "Guardia" : "Residente";
 
