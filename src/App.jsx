@@ -219,11 +219,38 @@ function BuildingBar({ role, buildings, selectedBuilding, setSelectedBuilding, b
 }
 
 function Login({ onLogin }) {
-  const roles = [
-    ["resident", "Residente", "👤", "Consultar pagos, visitas, reservas y documentos."],
-    ["admin", "Administración", "🏢", "Gestionar edificios, residentes, reservas y pagos."],
-    ["guard", "Guardia", "🛡️", "Validar QR, registrar entradas y tomar fotos de placas."],
-  ];
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setErrorMsg("");
+
+    if (!email.trim() || !password.trim()) {
+      setErrorMsg("Ingresa tu correo y contraseña.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) throw error;
+
+      await onLogin(data.user || data.session?.user);
+    } catch (error) {
+      console.error("Error iniciando sesión:", error);
+      setErrorMsg(error.message || "No se pudo iniciar sesión. Revisa el correo y la contraseña.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div
@@ -233,53 +260,95 @@ function Login({ onLogin }) {
           `radial-gradient(circle at top left, rgba(255,0,0,.35), transparent 28%), linear-gradient(135deg, ${BRAND.black}, ${BRAND.steel})`,
       }}
     >
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-10 grid gap-8 lg:grid-cols-[1fr_420px] lg:items-end">
-          <div>
-            <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white/90">
-              Administración inteligente de condominios
-            </div>
-            <h1 className="text-5xl font-black tracking-tight md:text-7xl">NeoVecino</h1>
-            <p className="mt-5 max-w-2xl text-lg font-medium text-slate-200">
-              Plataforma para residentes, administración y control de acceso en edificios residenciales.
+      <div className="mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl gap-8 lg:grid-cols-[1fr_430px] lg:items-center">
+        <div>
+          <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white/90">
+            Acceso privado para residentes, administración y guardia
+          </div>
+          <h1 className="text-5xl font-black tracking-tight md:text-7xl">NeoVecino</h1>
+          <p className="mt-5 max-w-2xl text-lg font-medium text-slate-200">
+            Plataforma para gestión de edificios residenciales con control de visitas, reservas, tickets, documentos y anuncios.
+          </p>
+          <div className="mt-8 max-w-xl rounded-[28px] border border-white/10 bg-white/10 p-5 text-sm text-slate-200 backdrop-blur">
+            <b className="text-white">Inicio de sesión real:</b> cada usuario entra con su correo y contraseña, y la app abre automáticamente su perfil según el rol asignado en Supabase.
+          </div>
+        </div>
+
+        <form onSubmit={submit} className="rounded-[34px] border border-white/10 bg-white/95 p-6 text-slate-950 shadow-2xl">
+          <Powered />
+          <div className="mt-6">
+            <h2 className="text-3xl font-black tracking-tight">Iniciar sesión</h2>
+            <p className="mt-2 text-sm font-medium text-slate-500">
+              Ingresa con el usuario creado en Supabase Auth.
             </p>
           </div>
 
-          <div className="rounded-[32px] border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur">
-            <Powered />
-            <div className="mt-5 rounded-3xl bg-black/25 p-4 text-sm text-slate-200">
-              Demo operativo con módulos de visitas QR, reservas, tickets, documentos y residentes.
-            </div>
-          </div>
-        </div>
+          <label className="mt-6 block text-sm font-black text-slate-700">
+            Correo electrónico
+            <input
+              type="email"
+              autoComplete="email"
+              className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="correo@ejemplo.com"
+            />
+          </label>
 
-        <div className="grid gap-5 md:grid-cols-3">
-          {roles.map(([key, label, icon, desc]) => (
-            <button
-              key={key}
-              onClick={() => onLogin(key)}
-              className="group rounded-[32px] border border-white/10 bg-white/10 p-6 text-left shadow-2xl backdrop-blur transition hover:-translate-y-1 hover:bg-white/15"
-            >
-              <div
-                className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl text-3xl shadow-lg"
-                style={{ background: `linear-gradient(135deg, ${BRAND.red}, #991b1b)` }}
-              >
-                {icon}
-              </div>
-              <h2 className="text-2xl font-black">Entrar como {label}</h2>
-              <p className="mt-3 min-h-[48px] text-sm font-medium text-slate-200">{desc}</p>
-              <div className="mt-6 rounded-2xl bg-black/35 px-4 py-3 text-sm font-black text-white transition group-hover:bg-black/50">
-                Demo sin contraseña →
-              </div>
-            </button>
-          ))}
-        </div>
+          <label className="mt-4 block text-sm font-black text-slate-700">
+            Contraseña
+            <input
+              type="password"
+              autoComplete="current-password"
+              className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Tu contraseña"
+            />
+          </label>
+
+          {errorMsg && (
+            <div className="mt-4 rounded-2xl bg-rose-50 p-3 text-sm font-bold text-rose-700">
+              {errorMsg}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-6 w-full rounded-2xl px-4 py-3 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ background: `linear-gradient(135deg, ${BRAND.red}, #b91c1c)` }}
+          >
+            {loading ? "Verificando..." : "Entrar"}
+          </button>
+
+          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold text-slate-500">
+            Si el usuario existe en Authentication pero no tiene perfil en app_users, la app no permitirá el acceso.
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
-function Shell({ role, setRole, active, setActive, children }) {
+function AuthLoading() {
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center px-4 text-white"
+      style={{ background: `linear-gradient(135deg, ${BRAND.black}, ${BRAND.steel})` }}
+    >
+      <div className="rounded-[32px] border border-white/10 bg-white/10 p-6 text-center shadow-2xl backdrop-blur">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-2xl text-white" style={{ backgroundColor: BRAND.red }}>
+          🏢
+        </div>
+        <h2 className="text-2xl font-black">Cargando NeoVecino...</h2>
+        <p className="mt-2 text-sm font-medium text-slate-200">Verificando sesión y perfil de usuario.</p>
+      </div>
+    </div>
+  );
+}
+
+function Shell({ role, active, setActive, children, onLogout, userProfile }) {
   const menus = {
   resident: [
     ["home", "Inicio", "⌂"],
@@ -319,13 +388,13 @@ function Shell({ role, setRole, active, setActive, children }) {
             </div>
             <div>
               <b className="text-lg font-black text-slate-950">NeoVecino</b>
-              <div className="text-xs font-bold text-slate-500">Modo {label}</div>
+              <div className="text-xs font-bold text-slate-500">Modo {label}{userProfile?.fullName ? ` · ${userProfile.fullName}` : ""}</div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="hidden md:block"><Powered /></div>
-            <Btn variant="secondary" onClick={() => setRole(null)}>↩ Salir</Btn>
+            <Btn variant="secondary" onClick={onLogout}>↩ Cerrar sesión</Btn>
           </div>
         </div>
       </header>
@@ -432,8 +501,8 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
   );
 }
 
-function Payments({ role, payments, apartments }) {
-  const rows = role === "resident" ? payments.filter(p => p.apt === "101") : payments;
+function Payments({ role, payments, apartments, aptNumber = "101" }) {
+  const rows = role === "resident" ? payments.filter(p => String(p.apt) === String(aptNumber)) : payments;
   return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="💳" title={role === "resident" ? "Mi estado de cuenta" : "Pagos y saldos"} sub="Cuotas y pagos" /><Card><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-slate-500"><tr><th className="py-2">Apto</th><th>Concepto</th><th>Fecha</th><th>Monto</th><th>Estado</th></tr></thead><tbody>{rows.map(p => <tr key={p.id} className="border-t"><td className="py-3 font-bold">{p.apt}</td><td>{p.concept}</td><td>{fmtDate(p.date)}</td><td>{usd(p.amount)}</td><td><Badge tone={p.status === "Pagado" ? "good" : p.status === "Vencido" ? "bad" : "warn"}>{p.status}</Badge></td></tr>)}</tbody></table></div></Card></div>;
 }
 
@@ -543,11 +612,11 @@ function buildEntryPatch(v) {
   };
 }
 
-function Visits({ role, visits, setVisits }) {
-  const [form, setForm] = useState(emptyVisit());
+function Visits({ role, visits, setVisits, aptNumber = "101" }) {
+  const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "101" }));
   const [selected, setSelected] = useState(visits[0]?.id || "");
 
-  const list = role === "resident" ? visits.filter(v => v.apt === "101") : visits;
+  const list = role === "resident" ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
   const selectedVisit = visits.find(v => v.id === selected) || list[0];
 
   const update = (id, patch) =>
@@ -571,6 +640,7 @@ function Visits({ role, visits, setVisits }) {
 
     const next = {
       ...form,
+      apt: aptNumber || form.apt || "101",
       id,
       date: form.validFrom,
       status: "Pendiente",
@@ -587,7 +657,7 @@ function Visits({ role, visits, setVisits }) {
 
     setVisits([next, ...visits]);
     setSelected(id);
-    setForm(emptyVisit());
+    setForm({ ...emptyVisit(), apt: aptNumber || "101" });
   }
 
   if (role === "guard") return <GuardPanel visits={visits} setVisits={setVisits} />;
@@ -1178,7 +1248,7 @@ function findOverlappingReservation(reservations, area, date, start, hours) {
   return reservations.find(r => reservationOverlaps(r, area, date, start, hours));
 }
 
-function Reservations({ role, reservations, setReservations }) {
+function Reservations({ role, reservations, setReservations, aptNumber = "101" }) {
   const [form, setForm] = useState({ area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
   const [notice, setNotice] = useState("");
 
@@ -1188,7 +1258,7 @@ function Reservations({ role, reservations, setReservations }) {
   const deposit = form.area === "Coworking" ? 0 : 1000;
   const safeHours = maxHours > 0 ? Math.min(Number(form.hours || 1), maxHours) : Number(form.hours || 1);
   const range = `${clock(form.start)} - ${clock(addHours(form.start, safeHours))}`;
-  const rows = role === "resident" ? reservations.filter(r => r.apt === "101") : reservations;
+  const rows = role === "resident" ? reservations.filter(r => String(r.apt) === String(aptNumber)) : reservations;
 
   const dayReservations = reservations
     .filter(r => r.area === form.area && r.date === form.date && reservationBlocksCalendar(r))
@@ -1202,7 +1272,7 @@ function Reservations({ role, reservations, setReservations }) {
   const blockingConflict = conflict && !reservationWasSent;
 
   const duplicate = reservations.some(r =>
-    r.apt === "101" &&
+    String(r.apt) === String(aptNumber) &&
     r.area === form.area &&
     r.date === form.date &&
     r.start === form.start &&
@@ -1258,7 +1328,7 @@ function Reservations({ role, reservations, setReservations }) {
 
     const r = {
       id: `res-${Date.now()}`,
-      apt: "101",
+      apt: aptNumber || "101",
       area: form.area,
       date: form.date,
       start: form.start,
@@ -1392,12 +1462,12 @@ function Reservations({ role, reservations, setReservations }) {
 }
 
 
-function Tickets({ role, tickets, setTickets }) {
+function Tickets({ role, tickets, setTickets, aptNumber = "101" }) {
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
 
-  const baseRows = role === "resident" ? tickets.filter(t => t.apt === "101") : tickets;
+  const baseRows = role === "resident" ? tickets.filter(t => String(t.apt) === String(aptNumber)) : tickets;
 
   const rows = baseRows.filter(t => {
     const matchesText = `${t.apt} ${t.title} ${t.status}`.toLowerCase().includes(q.toLowerCase());
@@ -1411,7 +1481,7 @@ function Tickets({ role, tickets, setTickets }) {
     setTickets([
       {
         id: `tic-${Date.now()}`,
-        apt: "101",
+        apt: aptNumber || "101",
         title: text,
         status: "Abierto",
         date: todayISO(),
@@ -2279,6 +2349,10 @@ export default function NeoVecinoMVP() {
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState("");
   const [selectedBuilding, setSelectedBuilding] = useState("canarias");
+  const [session, setSession] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
 
   const [apartments, setApartments] = useState(() => [
     ...seedApartments.map(a => ({ ...a, buildingId: "canarias" })),
@@ -2330,6 +2404,123 @@ export default function NeoVecinoMVP() {
   const [announcements, setAllAnnouncements] = useState(() => [
     ...seedAnnouncements.map(a => ({ ...a, buildingId: "canarias" })),
   ]);
+
+
+  function normalizeProfile(row, user) {
+    return {
+      id: row.id,
+      email: row.email || user?.email || "",
+      fullName: row.full_name || row.email || user?.email || "Usuario",
+      role: row.role,
+      buildingId: row.building_id || "canarias",
+      apt: row.apt || "",
+      status: row.status || "Activo",
+    };
+  }
+
+  async function loadUserProfile(user) {
+    if (!user) return null;
+
+    setAuthError("");
+
+    const { data, error } = await supabase
+      .from("app_users")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (error || !data) {
+      console.error("No se pudo cargar el perfil app_users:", error);
+      setUserProfile(null);
+      setRole(null);
+      setAuthError("Tu usuario existe en Supabase Auth, pero aún no tiene perfil en app_users. Revisa que el UID esté creado en la tabla app_users.");
+      return null;
+    }
+
+    if (data.status !== "Activo") {
+      setUserProfile(null);
+      setRole(null);
+      setAuthError("Este usuario está inactivo. Contacta a administración.");
+      return null;
+    }
+
+    const nextProfile = normalizeProfile(data, user);
+    setUserProfile(nextProfile);
+    setRole(nextProfile.role);
+    setActive("home");
+    setSelectedBuilding(nextProfile.buildingId || "canarias");
+    return nextProfile;
+  }
+
+  async function handleLogin(user) {
+    setAuthLoading(true);
+    try {
+      await loadUserProfile(user);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setUserProfile(null);
+    setRole(null);
+    setActive("home");
+    setSelectedBuilding("canarias");
+  }
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function initAuth() {
+      setAuthLoading(true);
+      setAuthError("");
+
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Error obteniendo sesión:", error);
+        setAuthError("No se pudo verificar la sesión.");
+        setAuthLoading(false);
+        return;
+      }
+
+      const currentSession = data.session || null;
+      setSession(currentSession);
+
+      if (currentSession?.user) {
+        await loadUserProfile(currentSession.user);
+      } else {
+        setUserProfile(null);
+        setRole(null);
+      }
+
+      if (mounted) setAuthLoading(false);
+    }
+
+    initAuth();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      setSession(nextSession || null);
+
+      if (nextSession?.user) {
+        await loadUserProfile(nextSession.user);
+      } else {
+        setUserProfile(null);
+        setRole(null);
+        setActive("home");
+        setSelectedBuilding("canarias");
+      }
+    });
+
+    return () => {
+      mounted = false;
+      listener?.subscription?.unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     async function loadCoreData() {
@@ -2426,7 +2617,10 @@ export default function NeoVecinoMVP() {
   const scopedDocs = docs.filter(belongs);
   const scopedResidents = residents.filter(belongs);
   const scopedAnnouncements = announcements.filter(belongs);
-  const apt = scopedApartments.find(a => a.number === "101") || scopedApartments[0] || seedApartments[0];
+  const residentAptNumber = userProfile?.apt || "101";
+  const apt = role === "resident"
+    ? (scopedApartments.find(a => String(a.number) === String(residentAptNumber)) || scopedApartments[0] || seedApartments[0])
+    : (scopedApartments.find(a => a.number === "101") || scopedApartments[0] || seedApartments[0]);
 
   const scopedSetter = setter => nextList => {
     setter(prev => [
@@ -2435,23 +2629,36 @@ export default function NeoVecinoMVP() {
     ]);
   };
 
-  if (!role) {
-    return <Login onLogin={(r) => { if (r === "resident" || r === "guard") setSelectedBuilding("canarias"); setRole(r); setActive("home"); }} />;
+  if (authLoading) {
+    return <AuthLoading />;
+  }
+
+  if (!session || !role || !userProfile) {
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        {authError && (
+          <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-xl rounded-2xl bg-rose-50 p-4 text-sm font-bold text-rose-700 shadow-2xl ring-1 ring-rose-200">
+            {authError}
+          </div>
+        )}
+      </>
+    );
   }
 
   const pages = {
     home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
-    payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} />,
-    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} />,
-    reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} />,
-    tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} />,
+    payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
+    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} />,
+    reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} />,
+    tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
   };
 
   return (
-    <Shell role={role} setRole={setRole} active={active} setActive={setActive}>
+    <Shell role={role} active={active} setActive={setActive} onLogout={handleLogout} userProfile={userProfile}>
       {loadingData && (
         <div className="mb-4 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700">
           Cargando datos desde Supabase...
