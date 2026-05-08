@@ -462,6 +462,13 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
     ["tickets", "Tickets", "🔧"],
     ["docs", "Docs", "📄"],
   ],
+  owner: [
+    ["home", "Inicio", "⌂"],
+    ["visits", "Visitas", "▦"],
+    ["reservations", "Reservas", "📅"],
+    ["tickets", "Tickets", "🔧"],
+    ["docs", "Docs", "📄"],
+  ],
   admin: [
     ["home", "Dashboard", "⌂"],
     ["apartments", "Apartamentos", "🏠"],
@@ -479,7 +486,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
   ],
 };
 
-  const label = role === "admin" ? "Administración" : role === "guard" ? "Guardia" : "Residente";
+  const label = role === "admin" ? "Administración" : role === "guard" ? "Guardia" : role === "owner" ? "Propietario" : "Residente";
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   return (
@@ -509,7 +516,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
 
       <main className="mx-auto grid max-w-7xl gap-5 px-4 py-5 lg:grid-cols-[250px_1fr]">
         <aside className="hidden rounded-[28px] border border-slate-200 bg-white/95 p-3 shadow-soft lg:block">
-          {menus[role].map(([key, text, icon]) => (
+          {(menus[role] || menus.resident).map(([key, text, icon]) => (
             <button
               key={key}
               onClick={() => setActive(key)}
@@ -526,7 +533,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 overflow-x-auto border-t border-slate-200 bg-white/95 p-2 backdrop-blur lg:hidden">
         <div className="flex min-w-max gap-1">
-          {menus[role].map(([key, text, icon]) => (
+          {(menus[role] || menus.resident).map(([key, text, icon]) => (
             <button
               key={key}
               onClick={() => setActive(key)}
@@ -613,8 +620,8 @@ function HomePage({ role, apt, apartments, visits, tickets, reservations, announ
 }
 
 function Payments({ role, payments, apartments, aptNumber = "" }) {
-  const rows = role === "resident" ? payments.filter(p => String(p.apt) === String(aptNumber)) : payments;
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="💳" title={role === "resident" ? "Mi estado de cuenta" : "Pagos y saldos"} sub="Cuotas y pagos" /><Card><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-slate-500"><tr><th className="py-2">Apto</th><th>Concepto</th><th>Fecha</th><th>Monto</th><th>Estado</th></tr></thead><tbody>{rows.map(p => <tr key={p.id} className="border-t"><td className="py-3 font-bold">{p.apt}</td><td>{p.concept}</td><td>{fmtDate(p.date)}</td><td>{usd(p.amount)}</td><td><Badge tone={p.status === "Pagado" ? "good" : p.status === "Vencido" ? "bad" : "warn"}>{p.status}</Badge></td></tr>)}</tbody></table></div></Card></div>;
+  const rows = ["resident", "owner"].includes(role) ? payments.filter(p => String(p.apt) === String(aptNumber)) : payments;
+  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="💳" title={["resident", "owner"].includes(role) ? "Mi estado de cuenta" : "Pagos y saldos"} sub="Cuotas y pagos" /><Card><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-slate-500"><tr><th className="py-2">Apto</th><th>Concepto</th><th>Fecha</th><th>Monto</th><th>Estado</th></tr></thead><tbody>{rows.map(p => <tr key={p.id} className="border-t"><td className="py-3 font-bold">{p.apt}</td><td>{p.concept}</td><td>{fmtDate(p.date)}</td><td>{usd(p.amount)}</td><td><Badge tone={p.status === "Pagado" ? "good" : p.status === "Vencido" ? "bad" : "warn"}>{p.status}</Badge></td></tr>)}</tbody></table></div></Card></div>;
 }
 
 function QR({ value }) {
@@ -727,7 +734,7 @@ function Visits({ role, visits, setVisits, aptNumber = "" }) {
   const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "" }));
   const [selected, setSelected] = useState(visits[0]?.id || "");
 
-  const list = role === "resident" ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
+  const list = ["resident", "owner"].includes(role) ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
   const selectedVisit = visits.find(v => v.id === selected) || list[0];
 
   const update = (id, patch) =>
@@ -777,11 +784,11 @@ function Visits({ role, visits, setVisits, aptNumber = "" }) {
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title
         icon="▦"
-        title={role === "resident" ? "Mis visitas QR" : "Control de visitas"}
+        title={["resident", "owner"].includes(role) ? "Mis visitas QR" : "Control de visitas"}
         sub="Autorización y registro de entradas"
       />
 
-      {role === "resident" && (
+      {["resident", "owner"].includes(role) && (
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <Card>
             <h3 className="mb-3 font-bold">Crear autorización</h3>
@@ -1002,7 +1009,7 @@ function VisitCard({ v, role, update }) {
 
       <div className="mt-2 rounded-xl bg-white px-3 py-2 font-mono text-sm">{v.id}</div>
 
-      {role !== "resident" && (
+      {!["resident", "owner"].includes(role) && (
         <div className="mt-3 flex flex-wrap gap-2">
           <Btn className="px-3 py-1.5" onClick={registerEntry}>
             Entrada
@@ -1369,7 +1376,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
   const deposit = form.area === "Coworking" ? 0 : 1000;
   const safeHours = maxHours > 0 ? Math.min(Number(form.hours || 1), maxHours) : Number(form.hours || 1);
   const range = `${clock(form.start)} - ${clock(addHours(form.start, safeHours))}`;
-  const rows = role === "resident" ? reservations.filter(r => String(r.apt) === String(aptNumber)) : reservations;
+  const rows = ["resident", "owner"].includes(role) ? reservations.filter(r => String(r.apt) === String(aptNumber)) : reservations;
 
   const dayReservations = reservations
     .filter(r => r.area === form.area && r.date === form.date && reservationBlocksCalendar(r))
@@ -1462,7 +1469,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="📅" title="Reservas" sub="Calendario y solicitudes de áreas" />
 
-      {role === "resident" && (
+      {["resident", "owner"].includes(role) && (
         <Card>
           <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
             <AvailabilityCalendar reservations={reservations} area={form.area} selectedDate={form.date} onSelectDate={updateDate} />
@@ -1578,7 +1585,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
 
-  const baseRows = role === "resident" ? tickets.filter(t => String(t.apt) === String(aptNumber)) : tickets;
+  const baseRows = ["resident", "owner"].includes(role) ? tickets.filter(t => String(t.apt) === String(aptNumber)) : tickets;
 
   const rows = baseRows.filter(t => {
     const matchesText = `${t.apt} ${t.title} ${t.status}`.toLowerCase().includes(q.toLowerCase());
@@ -1628,7 +1635,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
         sub={role === "admin" ? "Gestión de tickets y seguimiento" : "Tickets y seguimiento"}
       />
 
-      {role === "resident" && (
+      {["resident", "owner"].includes(role) && (
         <Card>
           <h3 className="mb-3 font-bold">Crear nuevo ticket</h3>
           <div className="flex flex-col gap-3 md:flex-row">
@@ -2184,9 +2191,9 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     if (!form.fullName.trim()) return "Debes ingresar el nombre completo del usuario.";
     if (!editingId && !form.password.trim()) return "Debes ingresar una contraseña temporal.";
     if (!editingId && form.password.trim().length < 6) return "La contraseña temporal debe tener al menos 6 caracteres.";
-    if (!["admin", "resident", "guard"].includes(form.role)) return "Selecciona un rol válido.";
+    if (!["admin", "owner", "resident", "guard"].includes(form.role)) return "Selecciona un rol válido.";
     if (!form.buildingId) return "Selecciona el edificio.";
-    if (form.role === "resident" && !form.apt.trim()) return "Para un residente debes asignar el apartamento.";
+    if (["resident", "owner"].includes(form.role) && !form.apt.trim()) return "Para un propietario o residente debes asignar el apartamento.";
     return "";
   }
 
@@ -2204,7 +2211,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
       full_name: form.fullName.trim(),
       role: form.role,
       building_id: form.buildingId || selectedBuilding || "canarias",
-      apt: form.role === "resident" ? form.apt.trim() : "",
+      apt: ["resident", "owner"].includes(form.role) ? form.apt.trim() : "",
       status: form.status || "Activo",
     };
 
@@ -2332,18 +2339,21 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
 
   function roleLabel(role) {
     if (role === "admin") return "Administrador";
+    if (role === "owner") return "Propietario";
     if (role === "guard") return "Guardia";
     return "Residente";
   }
 
   function roleTone(role) {
     if (role === "admin") return "bad";
+    if (role === "owner") return "warn";
     if (role === "guard") return "blue";
     return "good";
   }
 
   const activeUsers = users.filter(u => u.status === "Activo").length;
   const residentUsers = users.filter(u => u.role === "resident").length;
+  const ownerUsers = users.filter(u => u.role === "owner").length;
   const guardUsers = users.filter(u => u.role === "guard").length;
   const adminUsers = users.filter(u => u.role === "admin").length;
 
@@ -2351,9 +2361,10 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="🔐" title="Usuarios" sub="Creación automática de accesos por rol, edificio y apartamento" />
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card><p className="text-sm text-slate-500">Usuarios activos</p><h3 className="text-3xl font-black">{activeUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Administradores</p><h3 className="text-3xl font-black">{adminUsers}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Propietarios</p><h3 className="text-3xl font-black">{ownerUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Residentes</p><h3 className="text-3xl font-black">{residentUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Guardias</p><h3 className="text-3xl font-black">{guardUsers}</h3></Card>
       </div>
@@ -2402,11 +2413,12 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
                 setForm({
                   ...form,
                   role: e.target.value,
-                  apt: e.target.value === "resident" ? form.apt : "",
+                  apt: ["resident", "owner"].includes(e.target.value) ? form.apt : "",
                 })
               }
             >
               <option value="admin">Administrador</option>
+              <option value="owner">Propietario</option>
               <option value="resident">Residente</option>
               <option value="guard">Guardia</option>
             </select>
@@ -2427,11 +2439,11 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
           <Field label="Apartamento">
             <input
               list="apartamentos-usuarios"
-              disabled={form.role !== "resident"}
+              disabled={!["resident", "owner"].includes(form.role)}
               className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:bg-slate-100 disabled:text-slate-400"
               value={form.apt}
               onChange={e => setForm({ ...form, apt: e.target.value })}
-              placeholder={form.role === "resident" ? "Ej. 101, 1A, PH-1" : "No aplica"}
+              placeholder={["resident", "owner"].includes(form.role) ? "Ej. 101, 1A, PH-1" : "No aplica"}
             />
             <datalist id="apartamentos-usuarios">
               {apartmentsForForm.map(a => (
@@ -2506,7 +2518,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
                 <div className="mt-3 text-sm">
                   <div><b>Rol:</b> <Badge tone={roleTone(u.role)}>{roleLabel(u.role)}</Badge></div>
                   <div className="mt-2"><b>Edificio:</b> {b?.name || u.buildingId}</div>
-                  {u.role === "resident" && <div><b>Apartamento:</b> {u.apt || "-"}</div>}
+                  {["resident", "owner"].includes(u.role) && <div><b>Apartamento:</b> {u.apt || "-"}</div>}
                   <div className="mt-2 break-all text-xs text-slate-400"><b>UID:</b> {u.id}</div>
                 </div>
 
@@ -3221,7 +3233,7 @@ export default function NeoVecinoMVP() {
   const scopedAnnouncements = announcements.filter(belongs);
   const residentAptNumber = String(userProfile?.apt || "").trim();
   const residentApartmentFromDb = scopedApartments.find(a => String(a.number).trim().toLowerCase() === residentAptNumber.toLowerCase());
-  const apt = role === "resident"
+  const apt = ["resident", "owner"].includes(role)
     ? (
         residentApartmentFromDb || {
           id: `profile-${residentAptNumber || userProfile?.id || "resident"}`,
