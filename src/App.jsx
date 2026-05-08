@@ -236,10 +236,15 @@ function Login({ onLogin }) {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const { data, error } = await Promise.race([
+        supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Tiempo de espera agotado al iniciar sesión. Refresca la página e intenta de nuevo.")), 10000)
+        ),
+      ]);
 
       if (error) throw error;
 
@@ -361,6 +366,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
     ["home", "Dashboard", "⌂"],
     ["apartments", "Apartamentos", "🏠"],
     ["residents", "Residentes", "👥"],
+    ["users", "Usuarios", "🔐"],
     ["payments", "Pagos", "💳"],
     ["visits", "Visitas", "▦"],
     ["reservations", "Reservas", "📅"],
@@ -2009,6 +2015,396 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
   );
 }
 
+
+function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, currentUserId }) {
+  const empty = {
+    id: "",
+    email: "",
+    fullName: "",
+    role: "resident",
+    buildingId: selectedBuilding || "canarias",
+    apt: "",
+    status: "Activo",
+  };
+
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState(null);
+  const [q, setQ] = useState("");
+  const [buildingFilter, setBuildingFilter] = useState(selectedBuilding || "Todos");
+  const [msg, setMsg] = useState("");
+
+  const apartmentsForForm = apartments.filter(a => (a.buildingId || "canarias") === form.buildingId);
+
+  const filtered = users.filter(u => {
+    const matchesBuilding = buildingFilter === "Todos" || (u.buildingId || "canarias") === buildingFilter;
+    const text = `${u.email} ${u.fullName} ${u.role} ${u.buildingId} ${u.apt} ${u.status}`.toLowerCase();
+    return matchesBuilding && text.includes(q.toLowerCase());
+  });
+
+  function resetForm() {
+    setForm({
+      id: "",
+      email: "",
+      fullName: "",
+      role: "resident",
+      buildingId: selectedBuilding || "canarias",
+      apt: "",
+      status: "Activo",
+    });
+    setEditingId(null);
+    setMsg("");
+  }
+
+  function edit(u) {
+    setForm({
+      id: u.id,
+      email: u.email || "",
+      fullName: u.fullName || "",
+      role: u.role || "resident",
+      buildingId: u.buildingId || selectedBuilding || "canarias",
+      apt: u.apt || "",
+      status: u.status || "Activo",
+    });
+    setEditingId(u.id);
+    setMsg("");
+  }
+
+  async function save() {
+    setMsg("");
+
+    if (!form.id.trim()) {
+      setMsg("Debes pegar el UID del usuario creado en Supabase Authentication.");
+      return;
+    }
+
+    if (!form.email.trim()) {
+      setMsg("Debes ingresar el correo del usuario.");
+      return;
+    }
+
+    if (!["admin", "resident", "guard"].includes(form.role)) {
+      setMsg("Selecciona un rol válido.");
+      return;
+    }
+
+    if (form.role === "resident" && !form.apt.trim()) {
+      setMsg("Para un residente debes asignar el apartamento.");
+      return;
+    }
+
+    const payload = {
+      id: form.id.trim(),
+      email: form.email.trim().toLowerCase(),
+      full_name: form.fullName.trim(),
+      role: form.role,
+      building_id: form.buildingId || selectedBuilding || "canarias",
+      apt: form.role === "resident" ? form.apt.trim() : "",
+      status: form.status || "Activo",
+    };
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("app_users")
+        .update({
+          email: payload.email,
+          full_name: payload.full_name,
+          role: payload.role,
+          building_id: payload.building_id,
+          apt: payload.apt,
+          status: payload.status,
+        })
+        .eq("id", editingId);
+
+      if (error) {
+        console.error(error);
+        setMsg(`No se pudo actualizar el usuario. Detalle: ${error.message}`);
+        return;
+      }
+
+      setUsers(users.map(u =>
+        u.id === editingId
+          ? {
+              ...u,
+              email: payload.email,
+              fullName: payload.full_name,
+              role: payload.role,
+              buildingId: payload.building_id,
+              apt: payload.apt,
+              status: payload.status,
+            }
+          : u
+      ));
+
+      setMsg("Usuario actualizado correctamente.");
+      resetForm();
+      return;
+    }
+
+    const { error } = await supabase
+      .from("app_users")
+      .insert([payload]);
+
+    if (error) {
+      console.error(error);
+      setMsg(`No se pudo crear el perfil. Detalle: ${error.message}`);
+      return;
+    }
+
+    setUsers([
+      {
+        id: payload.id,
+        email: payload.email,
+        fullName: payload.full_name,
+        role: payload.role,
+        buildingId: payload.building_id,
+        apt: payload.apt,
+        status: payload.status,
+      },
+      ...users,
+    ]);
+
+    setMsg("Perfil creado correctamente. El usuario ya puede iniciar sesión si también existe en Authentication.");
+    resetForm();
+  }
+
+  async function deactivate(u) {
+    const { error } = await supabase
+      .from("app_users")
+      .update({ status: "Inactivo" })
+      .eq("id", u.id);
+
+    if (error) {
+      console.error(error);
+      setMsg(`No se pudo desactivar el usuario. Detalle: ${error.message}`);
+      return;
+    }
+
+    setUsers(users.map(x => x.id === u.id ? { ...x, status: "Inactivo" } : x));
+    setMsg("Usuario desactivado. Su perfil queda bloqueado para entrar a la app.");
+  }
+
+  async function remove(u) {
+    if (u.id === currentUserId) {
+      setMsg("No puedes eliminar tu propio perfil mientras estás usando la app.");
+      return;
+    }
+
+    const ok = window.confirm("Esto elimina el perfil app_users, pero no elimina el usuario de Supabase Authentication. ¿Deseas continuar?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("app_users")
+      .delete()
+      .eq("id", u.id);
+
+    if (error) {
+      console.error(error);
+      setMsg(`No se pudo eliminar el perfil. Detalle: ${error.message}`);
+      return;
+    }
+
+    setUsers(users.filter(x => x.id !== u.id));
+    setMsg("Perfil eliminado de app_users. Si querés eliminar el acceso totalmente, también elimina el usuario en Authentication.");
+  }
+
+  function roleLabel(role) {
+    if (role === "admin") return "Administrador";
+    if (role === "guard") return "Guardia";
+    return "Residente";
+  }
+
+  function roleTone(role) {
+    if (role === "admin") return "bad";
+    if (role === "guard") return "blue";
+    return "good";
+  }
+
+  const activeUsers = users.filter(u => u.status === "Activo").length;
+  const residentUsers = users.filter(u => u.role === "resident").length;
+  const guardUsers = users.filter(u => u.role === "guard").length;
+  const adminUsers = users.filter(u => u.role === "admin").length;
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="🔐" title="Usuarios" sub="Perfiles de acceso por rol, edificio y apartamento" />
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card><p className="text-sm text-slate-500">Usuarios activos</p><h3 className="text-3xl font-black">{activeUsers}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Administradores</p><h3 className="text-3xl font-black">{adminUsers}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Residentes</p><h3 className="text-3xl font-black">{residentUsers}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Guardias</p><h3 className="text-3xl font-black">{guardUsers}</h3></Card>
+      </div>
+
+      <Card>
+        <h3 className="mb-3 font-bold">{editingId ? "Editar perfil de usuario" : "Crear perfil de usuario"}</h3>
+
+        <div className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">
+          <b>Importante:</b> primero crea el usuario en <b>Supabase → Authentication → Users</b>, copia su <b>UID</b> y luego crea aquí el perfil. La contraseña se administra en Authentication.
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="UID de Authentication">
+            <Text
+              value={form.id}
+              disabled={Boolean(editingId)}
+              onChange={e => setForm({ ...form, id: e.target.value })}
+              placeholder="Pega aquí el UID"
+            />
+          </Field>
+
+          <Field label="Correo electrónico">
+            <Text
+              type="email"
+              value={form.email}
+              onChange={e => setForm({ ...form, email: e.target.value })}
+              placeholder="usuario@correo.com"
+            />
+          </Field>
+
+          <Field label="Nombre completo">
+            <Text
+              value={form.fullName}
+              onChange={e => setForm({ ...form, fullName: e.target.value })}
+              placeholder="Nombre del usuario"
+            />
+          </Field>
+
+          <Field label="Rol">
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+              value={form.role}
+              onChange={e =>
+                setForm({
+                  ...form,
+                  role: e.target.value,
+                  apt: e.target.value === "resident" ? form.apt : "",
+                })
+              }
+            >
+              <option value="admin">Administrador</option>
+              <option value="resident">Residente</option>
+              <option value="guard">Guardia</option>
+            </select>
+          </Field>
+
+          <Field label="Edificio">
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+              value={form.buildingId}
+              onChange={e => setForm({ ...form, buildingId: e.target.value, apt: "" })}
+            >
+              {buildings.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Apartamento">
+            <input
+              list="apartamentos-usuarios"
+              disabled={form.role !== "resident"}
+              className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:bg-slate-100 disabled:text-slate-400"
+              value={form.apt}
+              onChange={e => setForm({ ...form, apt: e.target.value })}
+              placeholder={form.role === "resident" ? "Ej. 101, 1A, PH-1" : "No aplica"}
+            />
+            <datalist id="apartamentos-usuarios">
+              {apartmentsForForm.map(a => (
+                <option key={a.id} value={a.number}>{a.number} · {a.level}</option>
+              ))}
+            </datalist>
+          </Field>
+
+          <Field label="Estado">
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+              value={form.status}
+              onChange={e => setForm({ ...form, status: e.target.value })}
+            >
+              <option>Activo</option>
+              <option>Inactivo</option>
+              <option>Pendiente</option>
+            </select>
+          </Field>
+        </div>
+
+        {msg && (
+          <div className="mt-4 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">
+            {msg}
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Btn onClick={save}>{editingId ? "Guardar cambios" : "+ Crear perfil"}</Btn>
+          {editingId && <Btn variant="outline" onClick={resetForm}>Cancelar edición</Btn>}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h3 className="font-bold">Usuarios registrados</h3>
+
+          <div className="flex flex-col gap-2 md:flex-row">
+            <select
+              className="rounded-xl border px-3 py-2 text-sm"
+              value={buildingFilter}
+              onChange={e => setBuildingFilter(e.target.value)}
+            >
+              <option value="Todos">Todos los edificios</option>
+              {buildings.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+
+            <input
+              className="rounded-xl border px-3 py-2 text-sm"
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Buscar por correo, nombre, rol o apto"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map(u => {
+            const b = buildings.find(x => x.id === u.buildingId);
+            return (
+              <div key={u.id} className="rounded-2xl border bg-slate-50 p-4">
+                <div className="flex justify-between gap-3">
+                  <div>
+                    <b>{u.fullName || u.email}</b>
+                    <div className="text-sm text-slate-500">{u.email}</div>
+                  </div>
+                  <Badge tone={u.status === "Activo" ? "good" : u.status === "Pendiente" ? "warn" : "default"}>{u.status}</Badge>
+                </div>
+
+                <div className="mt-3 text-sm">
+                  <div><b>Rol:</b> <Badge tone={roleTone(u.role)}>{roleLabel(u.role)}</Badge></div>
+                  <div className="mt-2"><b>Edificio:</b> {b?.name || u.buildingId}</div>
+                  {u.role === "resident" && <div><b>Apartamento:</b> {u.apt || "-"}</div>}
+                  <div className="mt-2 break-all text-xs text-slate-400"><b>UID:</b> {u.id}</div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(u)}>Editar</Btn>
+                  {u.status === "Activo" && <Btn variant="outline" className="px-3 py-1.5" onClick={() => deactivate(u)}>Desactivar</Btn>}
+                  <Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(u)}>Eliminar perfil</Btn>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {!filtered.length && (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+            No hay usuarios para mostrar.
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding, announcements = [], setAnnouncements }) {
   const empty = { apt: "", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
   const emptyAnnouncement = { target: "Todos", apt: "", title: "", message: "", priority: "Normal" };
@@ -2405,6 +2801,17 @@ export default function NeoVecinoMVP() {
     ...seedAnnouncements.map(a => ({ ...a, buildingId: "canarias" })),
   ]);
 
+  const [appUsers, setAppUsers] = useState([]);
+
+
+  function withTimeout(promise, ms = 10000, label = "operación") {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Tiempo de espera agotado al cargar ${label}.`)), ms)
+      ),
+    ]);
+  }
 
   function normalizeProfile(row, user) {
     return {
@@ -2423,11 +2830,27 @@ export default function NeoVecinoMVP() {
 
     setAuthError("");
 
-    const { data, error } = await supabase
-      .from("app_users")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    let profileResult;
+
+    try {
+      profileResult = await withTimeout(
+        supabase
+          .from("app_users")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle(),
+        10000,
+        "el perfil app_users"
+      );
+    } catch (error) {
+      console.error("La consulta del perfil app_users tardó demasiado o falló:", error);
+      setUserProfile(null);
+      setRole(null);
+      setAuthError("La app no pudo cargar el perfil del usuario desde Supabase. Revisa la conexión, las políticas RLS de app_users o intenta cerrar sesión y volver a entrar.");
+      return null;
+    }
+
+    const { data, error } = profileResult;
 
     if (error || !data) {
       console.error("No se pudo cargar el perfil app_users:", error);
@@ -2477,7 +2900,21 @@ export default function NeoVecinoMVP() {
       setAuthLoading(true);
       setAuthError("");
 
-      const { data, error } = await supabase.auth.getSession();
+      let sessionResult;
+
+      try {
+        sessionResult = await withTimeout(supabase.auth.getSession(), 10000, "la sesión de Supabase");
+      } catch (error) {
+        console.error("La verificación de sesión tardó demasiado o falló:", error);
+        setAuthError("La app no pudo verificar la sesión. Refresca la página o intenta borrar la sesión del navegador.");
+        setSession(null);
+        setUserProfile(null);
+        setRole(null);
+        setAuthLoading(false);
+        return;
+      }
+
+      const { data, error } = sessionResult;
 
       if (!mounted) return;
 
@@ -2506,13 +2943,17 @@ export default function NeoVecinoMVP() {
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       setSession(nextSession || null);
 
-      if (nextSession?.user) {
-        await loadUserProfile(nextSession.user);
-      } else {
-        setUserProfile(null);
-        setRole(null);
-        setActive("home");
-        setSelectedBuilding("canarias");
+      try {
+        if (nextSession?.user) {
+          await loadUserProfile(nextSession.user);
+        } else {
+          setUserProfile(null);
+          setRole(null);
+          setActive("home");
+          setSelectedBuilding("canarias");
+        }
+      } finally {
+        if (mounted) setAuthLoading(false);
       }
     });
 
@@ -2528,10 +2969,11 @@ export default function NeoVecinoMVP() {
       setDataError("");
 
       try {
-        const [buildingsResult, apartmentsResult, residentsResult] = await Promise.all([
+        const [buildingsResult, apartmentsResult, residentsResult, appUsersResult] = await Promise.all([
           supabase.from("buildings").select("*").order("name"),
           supabase.from("apartments").select("*").order("number"),
           supabase.from("residents").select("*").order("name"),
+          supabase.from("app_users").select("*").order("email"),
         ]);
 
         if (buildingsResult.error) throw buildingsResult.error;
@@ -2568,6 +3010,23 @@ export default function NeoVecinoMVP() {
           status: r.status,
           notes: r.notes,
         }));
+
+        if (!appUsersResult.error) {
+          const dbAppUsers = (appUsersResult.data || []).map((u) => ({
+            id: u.id,
+            email: u.email,
+            fullName: u.full_name || "",
+            role: u.role,
+            buildingId: u.building_id || "canarias",
+            apt: u.apt || "",
+            status: u.status || "Activo",
+            createdAt: u.created_at,
+          }));
+
+          setAppUsers(dbAppUsers);
+        } else {
+          console.warn("No se pudieron cargar usuarios app_users desde Supabase:", appUsersResult.error);
+        }
 
         if (dbBuildings.length) setBuildings(dbBuildings);
         if (dbApartments.length) setApartments(dbApartments);
@@ -2650,6 +3109,7 @@ export default function NeoVecinoMVP() {
     home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
+    users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
     visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} />,
