@@ -645,6 +645,9 @@ function Reservations({ role, reservations, setReservations }) {
     ? findOverlappingReservation(reservations, form.area, form.date, form.start, safeHours)
     : null;
 
+  const reservationWasSent = notice === "Solicitud enviada.";
+  const blockingConflict = conflict && !reservationWasSent;
+
   const duplicate = reservations.some(r =>
     r.apt === "101" &&
     r.area === form.area &&
@@ -690,8 +693,8 @@ function Reservations({ role, reservations, setReservations }) {
       return;
     }
 
-    if (conflict) {
-      setNotice(`No se puede reservar. ${form.area} ya está ocupada de ${clock(conflict.start)} a ${clock(getReservationEndTime(conflict))}.`);
+    if (blockingConflict) {
+      setNotice(`No se puede reservar. ${form.area} ya tiene una reserva registrada de ${clock(conflict.start)} a ${clock(getReservationEndTime(conflict))}. Por favor selecciona otro horario.`);
       return;
     }
 
@@ -773,9 +776,15 @@ function Reservations({ role, reservations, setReservations }) {
                 {form.area === "Coworking" && <span>Coworking no tiene cuota de limpieza ni depósito.</span>}
               </div>
 
-              {conflict && (
+              {reservationWasSent && (
+                <div className="rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
+                  Tu solicitud de reserva ha sido enviada correctamente. El horario solicitado queda registrado como pendiente mientras administración la revisa.
+                </div>
+              )}
+
+              {blockingConflict && (
                 <div className="rounded-2xl bg-rose-50 p-3 text-sm font-bold text-rose-700">
-                  No disponible: ya existe una reserva de {clock(conflict.start)} a {clock(getReservationEndTime(conflict))} para esta misma área.
+                  Este horario se cruza con una reserva existente de {clock(conflict.start)} a {clock(getReservationEndTime(conflict))}. Por favor selecciona otro horario disponible.
                 </div>
               )}
 
@@ -793,10 +802,10 @@ function Reservations({ role, reservations, setReservations }) {
                 </div>
               )}
 
-              {notice && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{notice}</div>}
+              {notice && !reservationWasSent && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{notice}</div>}
 
-              <Btn onClick={add} variant={maxHours <= 0 || conflict ? "secondary" : "primary"}>
-                {maxHours <= 0 ? "Horario no disponible" : conflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
+              <Btn onClick={add} variant={maxHours <= 0 || blockingConflict ? "secondary" : "primary"}>
+                {maxHours <= 0 ? "Horario no disponible" : reservationWasSent ? "Solicitud enviada" : blockingConflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
               </Btn>
             </div>
           </div>
