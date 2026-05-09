@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "VISITAS_SUPABASE_FINAL_SIN_DEMO";
+const APP_VERSION = "VISITAS_GUARD_UNIFIED_SUPABASE";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -479,7 +479,6 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
     ["docs", "Docs", "📄"],
   ],
   guard: [
-    ["home", "Guardia", "🛡️"],
     ["visits", "Visitas", "📋"],
   ],
 };
@@ -500,7 +499,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
             </div>
             <div>
               <b className="text-lg font-black text-slate-950">NeoVecino</b>
-              <div className="text-xs font-bold text-slate-500">Modo {label}{userProfile?.fullName ? ` · ${userProfile.fullName}` : ""}</div>
+              <div className="text-xs font-bold text-slate-500">Modo {label}{userProfile?.fullName ? ` · ${userProfile.fullName}` : ""}</div><div className="text-[10px] font-bold text-slate-400">{APP_VERSION}</div>
             </div>
           </div>
 
@@ -3270,7 +3269,7 @@ export default function NeoVecinoMVP() {
     const nextProfile = normalizeProfile(data, user);
     setUserProfile(nextProfile);
     setRole(nextProfile.role);
-    setActive("home");
+    setActive(nextProfile.role === "guard" ? "visits" : "home");
     setSelectedBuilding(nextProfile.buildingId || "canarias");
     return nextProfile;
   }
@@ -3541,13 +3540,30 @@ export default function NeoVecinoMVP() {
     );
   }
 
+  const guardVisitsPage = (
+    <Visits
+      role={role}
+      visits={visits}
+      setVisits={setAllVisits}
+      aptNumber=""
+      selectedBuilding={selectedBuilding}
+      visitLogs={visitLogs}
+      setVisitLogs={setVisitLogs}
+      userProfile={userProfile}
+    />
+  );
+
   const pages = {
-    home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
+    home: role === "guard"
+      ? guardVisitsPage
+      : <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
     users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
-    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
+    visits: role === "guard"
+      ? guardVisitsPage
+      : <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} />,
     tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
