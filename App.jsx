@@ -550,7 +550,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
   );
 }
 
-function HomePage({ role, apt, apartments, visits, setVisits = () => {}, visitLogs = [], setVisitLogs = () => {}, userProfile = null, tickets, reservations, announcements = [] }) {
+function HomePage({ role, apt, apartments, visits, tickets, reservations, announcements = [] }) {
   if (role === "admin") {
     return (
       <div className="space-y-4 pb-24 lg:pb-0">
@@ -565,7 +565,7 @@ function HomePage({ role, apt, apartments, visits, setVisits = () => {}, visitLo
     );
   }
 
-  if (role === "guard") return <GuardPanel visits={visits} setVisits={setVisits} visitLogs={visitLogs} setVisitLogs={setVisitLogs} userProfile={userProfile} />;
+  if (role === "guard") return <GuardPanel visits={visits} setVisits={() => {}} readOnly />;
 
   const visibleAnnouncements = announcements
     .filter(a => a.status !== "Borrador")
@@ -635,7 +635,7 @@ const emptyVisit = () => ({
   type: "Familiar",
   date: todayISO(),
   time: "2:00 p.m. - 6:00 p.m.",
-  apt: "101",
+  apt: "",
   identity: "",
   plate: "",
   notes: "",
@@ -648,6 +648,78 @@ const emptyVisit = () => ({
   validTo: todayISO(),
   peopleCount: 1,
 });
+
+function normalizeDbVisit(v) {
+  return {
+    id: String(v.id),
+    buildingId: v.building_id || "canarias",
+    apt: v.apt || "",
+    visitor: v.visitor || "",
+    type: v.type || "Familiar",
+    identity: v.identity || "",
+    plate: v.plate || "",
+    notes: v.notes || "",
+    date: v.date || v.valid_from || todayISO(),
+    time: v.time || "",
+    status: v.status || "Pendiente",
+    entryTime: v.entry_time || "",
+    exitTime: v.exit_time || "",
+    platePhoto: v.plate_photo || "",
+    qrType: v.qr_type || "Un solo uso",
+    maxUses: Number(v.max_uses || 1),
+    uses: Number(v.uses || 0),
+    lastUse: v.last_use || "",
+    validFrom: v.valid_from || v.date || todayISO(),
+    validTo: v.valid_to || v.date || todayISO(),
+    peopleCount: Number(v.people_count || 1),
+    createdAt: v.created_at || "",
+    updatedAt: v.updated_at || "",
+  };
+}
+
+function normalizeDbVisitLog(row) {
+  return {
+    id: String(row.id),
+    visitId: String(row.visit_id),
+    buildingId: row.building_id || "canarias",
+    apt: row.apt || "",
+    visitor: row.visitor || "",
+    plate: row.plate || "",
+    action: row.action || "entry",
+    useNumber: Number(row.use_number || 0),
+    eventAt: row.event_at || row.created_at || "",
+    guardUserId: row.guard_user_id || "",
+    guardName: row.guard_name || "",
+    peopleCount: Number(row.people_count || 1),
+    notes: row.notes || "",
+    platePhoto: row.plate_photo || "",
+    createdAt: row.created_at || "",
+  };
+}
+
+function visitPatchToDb(patch) {
+  const db = {};
+  if (Object.prototype.hasOwnProperty.call(patch, "visitor")) db.visitor = patch.visitor;
+  if (Object.prototype.hasOwnProperty.call(patch, "type")) db.type = patch.type;
+  if (Object.prototype.hasOwnProperty.call(patch, "identity")) db.identity = patch.identity;
+  if (Object.prototype.hasOwnProperty.call(patch, "plate")) db.plate = patch.plate;
+  if (Object.prototype.hasOwnProperty.call(patch, "notes")) db.notes = patch.notes;
+  if (Object.prototype.hasOwnProperty.call(patch, "date")) db.date = patch.date;
+  if (Object.prototype.hasOwnProperty.call(patch, "time")) db.time = patch.time;
+  if (Object.prototype.hasOwnProperty.call(patch, "status")) db.status = patch.status;
+  if (Object.prototype.hasOwnProperty.call(patch, "entryTime")) db.entry_time = patch.entryTime;
+  if (Object.prototype.hasOwnProperty.call(patch, "exitTime")) db.exit_time = patch.exitTime;
+  if (Object.prototype.hasOwnProperty.call(patch, "platePhoto")) db.plate_photo = patch.platePhoto;
+  if (Object.prototype.hasOwnProperty.call(patch, "qrType")) db.qr_type = patch.qrType;
+  if (Object.prototype.hasOwnProperty.call(patch, "maxUses")) db.max_uses = Number(patch.maxUses || 1);
+  if (Object.prototype.hasOwnProperty.call(patch, "uses")) db.uses = Number(patch.uses || 0);
+  if (Object.prototype.hasOwnProperty.call(patch, "lastUse")) db.last_use = patch.lastUse;
+  if (Object.prototype.hasOwnProperty.call(patch, "validFrom")) db.valid_from = patch.validFrom;
+  if (Object.prototype.hasOwnProperty.call(patch, "validTo")) db.valid_to = patch.validTo;
+  if (Object.prototype.hasOwnProperty.call(patch, "peopleCount")) db.people_count = Number(patch.peopleCount || 1);
+  db.updated_at = new Date().toISOString();
+  return db;
+}
 
 function getVisitQrType(v) {
   return v?.qrType || "Un solo uso";
@@ -730,177 +802,97 @@ function buildEntryPatch(v) {
   };
 }
 
-function mapVisitFromDb(v) {
-  return {
-    id: String(v.id || ""),
-    buildingId: v.building_id || "canarias",
-    visitor: v.visitor || "",
-    apt: v.apt || "",
-    type: v.type || "Familiar",
-    date: v.date || v.valid_from || todayISO(),
-    time: v.time || "",
-    status: v.status || "Pendiente",
-    identity: v.identity || "",
-    plate: v.plate || "",
-    notes: v.notes || "",
-    entryTime: v.entry_time || "",
-    exitTime: v.exit_time || "",
-    platePhoto: v.plate_photo || "",
-    qrType: v.qr_type || "Un solo uso",
-    maxUses: Math.max(1, Number(v.max_uses || 1)),
-    uses: Math.max(0, Number(v.uses || 0)),
-    lastUse: v.last_use || "",
-    validFrom: v.valid_from || v.date || todayISO(),
-    validTo: v.valid_to || v.date || todayISO(),
-    peopleCount: Math.max(1, Number(v.people_count || 1)),
-    createdAt: v.created_at,
-    updatedAt: v.updated_at,
-  };
+function VisitLogsList({ logs = [], title = "Bitácora de accesos" }) {
+  const rows = [...logs].sort((a, b) => new Date(b.eventAt || 0) - new Date(a.eventAt || 0)).slice(0, 20);
+
+  return (
+    <Card>
+      <h3 className="mb-3 font-bold">{title}</h3>
+      {rows.length === 0 ? (
+        <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+          Aún no hay entradas o salidas registradas.
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map(log => (
+            <div key={log.id} className="rounded-2xl border bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <b>{log.visitor || "Visitante"}</b>
+                  <div className="text-sm text-slate-500">Apto {log.apt || "-"}</div>
+                </div>
+                <Badge tone={log.action === "entry" ? "good" : "default"}>
+                  {log.action === "entry" ? "Entrada" : "Salida"}
+                </Badge>
+              </div>
+              <div className="mt-2 text-sm text-slate-600">{fmtDateTime(log.eventAt)}</div>
+              <div className="mt-2 rounded-xl bg-white p-3 text-xs">
+                <div><b>Uso:</b> {log.useNumber || "-"}</div>
+                <div><b>Personas:</b> {log.peopleCount || 1}</div>
+                <div><b>Placa:</b> {log.plate || "-"}</div>
+                <div><b>Guardia:</b> {log.guardName || "-"}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
 }
 
-function visitToDbPayload(v, buildingId) {
-  return {
-    building_id: buildingId || v.buildingId || "canarias",
-    apt: v.apt || "",
-    visitor: v.visitor || "",
-    type: v.type || "Familiar",
-    date: v.date || v.validFrom || todayISO(),
-    time: v.time || "",
-    status: v.status || "Pendiente",
-    identity: v.identity || "",
-    plate: v.plate || "",
-    notes: v.notes || "",
-    entry_time: v.entryTime || "",
-    exit_time: v.exitTime || "",
-    plate_photo: v.platePhoto || "",
-    qr_type: v.qrType || "Un solo uso",
-    max_uses: Number(v.maxUses || 1),
-    uses: Number(v.uses || 0),
-    last_use: v.lastUse || "",
-    valid_from: v.validFrom || v.date || todayISO(),
-    valid_to: v.validTo || v.date || todayISO(),
-    people_count: Number(v.peopleCount || 1),
-  };
-}
-
-function visitPatchToDb(patch) {
-  const db = {};
-  if (Object.prototype.hasOwnProperty.call(patch, "visitor")) db.visitor = patch.visitor;
-  if (Object.prototype.hasOwnProperty.call(patch, "apt")) db.apt = patch.apt;
-  if (Object.prototype.hasOwnProperty.call(patch, "type")) db.type = patch.type;
-  if (Object.prototype.hasOwnProperty.call(patch, "date")) db.date = patch.date;
-  if (Object.prototype.hasOwnProperty.call(patch, "time")) db.time = patch.time;
-  if (Object.prototype.hasOwnProperty.call(patch, "status")) db.status = patch.status;
-  if (Object.prototype.hasOwnProperty.call(patch, "identity")) db.identity = patch.identity;
-  if (Object.prototype.hasOwnProperty.call(patch, "plate")) db.plate = patch.plate;
-  if (Object.prototype.hasOwnProperty.call(patch, "notes")) db.notes = patch.notes;
-  if (Object.prototype.hasOwnProperty.call(patch, "entryTime")) db.entry_time = patch.entryTime;
-  if (Object.prototype.hasOwnProperty.call(patch, "exitTime")) db.exit_time = patch.exitTime;
-  if (Object.prototype.hasOwnProperty.call(patch, "platePhoto")) db.plate_photo = patch.platePhoto;
-  if (Object.prototype.hasOwnProperty.call(patch, "qrType")) db.qr_type = patch.qrType;
-  if (Object.prototype.hasOwnProperty.call(patch, "maxUses")) db.max_uses = Number(patch.maxUses || 1);
-  if (Object.prototype.hasOwnProperty.call(patch, "uses")) db.uses = Number(patch.uses || 0);
-  if (Object.prototype.hasOwnProperty.call(patch, "lastUse")) db.last_use = patch.lastUse;
-  if (Object.prototype.hasOwnProperty.call(patch, "validFrom")) db.valid_from = patch.validFrom;
-  if (Object.prototype.hasOwnProperty.call(patch, "validTo")) db.valid_to = patch.validTo;
-  if (Object.prototype.hasOwnProperty.call(patch, "peopleCount")) db.people_count = Number(patch.peopleCount || 1);
-  db.updated_at = new Date().toISOString();
-  return db;
-}
-
-
-function mapVisitLogFromDb(l) {
-  return {
-    id: String(l.id || ""),
-    visitId: String(l.visit_id || ""),
-    buildingId: l.building_id || "canarias",
-    apt: l.apt || "",
-    visitor: l.visitor || "",
-    plate: l.plate || "",
-    action: l.action || "entry",
-    useNumber: Number(l.use_number || 0),
-    eventAt: l.event_at || l.created_at || "",
-    guardUserId: l.guard_user_id || "",
-    guardName: l.guard_name || "",
-    peopleCount: Math.max(1, Number(l.people_count || 1)),
-    notes: l.notes || "",
-    platePhoto: l.plate_photo || "",
-    createdAt: l.created_at || "",
-  };
-}
-
-async function createVisitAccessLog({ visit, action, useNumber = 0, userProfile = null, visitLogs = [], setVisitLogs = () => {} }) {
-  if (!visit?.id) return false;
-
-  const payload = {
-    visit_id: visit.id,
-    building_id: visit.buildingId || "canarias",
-    apt: visit.apt || "",
-    visitor: visit.visitor || "",
-    plate: visit.plate || "",
-    action,
-    use_number: Number(useNumber || 0),
-    guard_user_id: userProfile?.id || null,
-    guard_name: userProfile?.fullName || userProfile?.email || "",
-    people_count: Number(visit.peopleCount || 1),
-    notes: visit.notes || "",
-    plate_photo: visit.platePhoto || "",
-  };
-
-  const { data, error } = await supabase
-    .from("visit_logs")
-    .insert([payload])
-    .select("*")
-    .single();
-
-  if (error) {
-    console.error("No se pudo guardar la bitácora de acceso:", error);
-    return false;
-  }
-
-  const saved = mapVisitLogFromDb(data);
-  setVisitLogs([saved, ...visitLogs]);
-  return true;
-}
-
-function formatVisitLogAction(action) {
-  return action === "exit" ? "Salida" : "Entrada";
-}
-
-function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "", visitLogs = [], setVisitLogs = () => {}, userProfile = null }) {
+function Visits({ role, visits, setVisits, aptNumber = "", buildingId = "canarias", userProfile, visitLogs = [], setVisitLogs }) {
   const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "" }));
-  const [selected, setSelected] = useState(visits[0]?.id || "");
+  const [selected, setSelected] = useState("");
+  const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const list = ["resident", "owner"].includes(role) ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
-  const selectedVisit = list.find(v => v.id === selected) || list[0];
+  const isResidentAccess = ["resident", "owner"].includes(role);
+  const list = isResidentAccess ? visits.filter(v => String(v.apt) === String(aptNumber)) : visits;
+  const selectedVisit = selected ? visits.find(v => String(v.id).toLowerCase() === selected.toLowerCase()) : list[0];
+  const scopedLogs = isResidentAccess
+    ? visitLogs.filter(log => String(log.apt) === String(aptNumber))
+    : visitLogs;
 
-  async function update(id, patch) {
-    const nextList = visits.map(v => v.id === id ? { ...v, ...patch } : v);
-    setVisits(nextList);
+  useEffect(() => {
+    setForm(prev => ({ ...prev, apt: aptNumber || prev.apt || "" }));
+  }, [aptNumber]);
 
-    const { error } = await supabase
+  async function updateVisit(id, patch) {
+    const dbPatch = visitPatchToDb(patch);
+
+    const { data, error } = await supabase
       .from("visits")
-      .update(visitPatchToDb(patch))
-      .eq("id", id);
+      .update(dbPatch)
+      .eq("id", id)
+      .select("*")
+      .single();
 
     if (error) {
       console.error("No se pudo actualizar la visita en Supabase:", error);
-      alert(`No se pudo actualizar la visita en Supabase. Detalle: ${error.message}`);
-      return false;
+      setMsg(`No se pudo actualizar la visita. Detalle: ${error.message}`);
+      return null;
     }
 
-    return true;
+    const normalized = normalizeDbVisit(data);
+    setVisits(visits.map(v => String(v.id) === String(id) ? normalized : v));
+    return normalized;
   }
 
   async function create() {
+    setMsg("");
+
     if (!form.visitor.trim()) {
-      alert("Ingresa el nombre del visitante o grupo.");
+      setMsg("Ingresa el nombre del visitante o grupo.");
       return;
     }
 
     if (form.validFrom > form.validTo) {
-      alert("La fecha inicial no puede ser posterior a la fecha final.");
+      setMsg("La fecha inicial no puede ser posterior a la fecha final.");
+      return;
+    }
+
+    if (isResidentAccess && !aptNumber) {
+      setMsg("Tu usuario no tiene apartamento asignado. Revisa el perfil en Usuarios.");
       return;
     }
 
@@ -908,56 +900,73 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = ""
     const maxUses = qrType === "Un solo uso" ? 1 : Math.max(2, Number(form.maxUses || 2));
     const peopleCount = Math.max(1, Number(form.peopleCount || 1));
 
-    const next = {
-      ...form,
+    const payload = {
+      building_id: buildingId,
       apt: aptNumber || form.apt || "",
+      visitor: form.visitor.trim(),
+      type: form.type || "Familiar",
+      identity: form.identity || "",
+      plate: form.plate || "",
+      notes: form.notes || "",
       date: form.validFrom,
+      time: form.time || "",
       status: "Pendiente",
-      entryTime: "",
-      exitTime: "",
-      qrType,
-      maxUses,
+      entry_time: "",
+      exit_time: "",
+      plate_photo: "",
+      qr_type: qrType,
+      max_uses: maxUses,
       uses: 0,
-      lastUse: "",
-      peopleCount,
-      validFrom: form.validFrom,
-      validTo: form.validTo,
+      last_use: "",
+      valid_from: form.validFrom,
+      valid_to: form.validTo,
+      people_count: peopleCount,
     };
 
     setSaving(true);
 
-    try {
-      const { data, error } = await supabase
-        .from("visits")
-        .insert([visitToDbPayload(next, selectedBuilding)])
-        .select("*")
-        .single();
+    const { data, error } = await supabase
+      .from("visits")
+      .insert([payload])
+      .select("*")
+      .single();
 
-      if (error) throw error;
+    setSaving(false);
 
-      const saved = mapVisitFromDb(data);
-      setVisits([saved, ...visits]);
-      setSelected(saved.id);
-      setForm({ ...emptyVisit(), apt: aptNumber || "" });
-    } catch (error) {
+    if (error) {
       console.error("No se pudo guardar la visita en Supabase:", error);
-      alert(`No se pudo guardar la visita en Supabase. Detalle: ${error.message || error}`);
-    } finally {
-      setSaving(false);
+      setMsg(`No se pudo guardar la visita en Supabase. Detalle: ${error.message}`);
+      return;
     }
+
+    const created = normalizeDbVisit(data);
+    setVisits([created, ...visits]);
+    setSelected(created.id);
+    setForm({ ...emptyVisit(), apt: aptNumber || "" });
+    setMsg("Visita creada correctamente. El código QR ya está disponible para guardia.");
   }
 
-  if (role === "guard") return <GuardPanel visits={visits} setVisits={setVisits} visitLogs={visitLogs} setVisitLogs={setVisitLogs} userProfile={userProfile} />;
+  if (role === "guard") {
+    return (
+      <GuardPanel
+        visits={visits}
+        setVisits={setVisits}
+        visitLogs={visitLogs}
+        setVisitLogs={setVisitLogs}
+        userProfile={userProfile}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title
         icon="▦"
-        title={["resident", "owner"].includes(role) ? "Mis visitas QR" : "Control de visitas"}
+        title={isResidentAccess ? "Mis visitas QR" : "Control de visitas"}
         sub="Autorización y registro de entradas"
       />
 
-      {["resident", "owner"].includes(role) && (
+      {isResidentAccess && (
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <Card>
             <h3 className="mb-3 font-bold">Crear autorización</h3>
@@ -992,69 +1001,38 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = ""
                   max="50"
                   className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
                   value={form.peopleCount}
-                  onChange={e =>
-                    setForm({
-                      ...form,
-                      peopleCount: Math.max(1, Number(e.target.value || 1)),
-                    })
-                  }
+                  onChange={e => setForm({ ...form, peopleCount: Math.max(1, Number(e.target.value || 1)) })}
                 />
               </Field>
 
               <Field label="Identidad">
-                <Text
-                  value={form.identity}
-                  onChange={e => setForm({ ...form, identity: e.target.value })}
-                />
+                <Text value={form.identity} onChange={e => setForm({ ...form, identity: e.target.value })} />
               </Field>
 
               <Field label="Válido desde">
                 <DateField
                   value={form.validFrom}
-                  onChange={e =>
-                    setForm({
-                      ...form,
-                      validFrom: e.target.value,
-                      date: e.target.value,
-                      validTo: form.validTo < e.target.value ? e.target.value : form.validTo,
-                    })
-                  }
+                  onChange={e => setForm({ ...form, validFrom: e.target.value, date: e.target.value, validTo: form.validTo < e.target.value ? e.target.value : form.validTo })}
                 />
               </Field>
 
               <Field label="Válido hasta">
-                <DateField
-                  value={form.validTo}
-                  onChange={e => setForm({ ...form, validTo: e.target.value })}
-                />
+                <DateField value={form.validTo} onChange={e => setForm({ ...form, validTo: e.target.value })} />
               </Field>
 
               <Field label="Horario permitido">
-                <Text
-                  value={form.time}
-                  onChange={e => setForm({ ...form, time: e.target.value })}
-                  placeholder="Ej. 2:00 p.m. - 6:00 p.m."
-                />
+                <Text value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} placeholder="Ej. 2:00 p.m. - 6:00 p.m." />
               </Field>
 
               <Field label="Placa">
-                <Text
-                  value={form.plate}
-                  onChange={e => setForm({ ...form, plate: e.target.value.toUpperCase() })}
-                />
+                <Text value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value.toUpperCase() })} />
               </Field>
 
               <Field label="Tipo de código QR">
                 <select
                   className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
                   value={form.qrType}
-                  onChange={e =>
-                    setForm({
-                      ...form,
-                      qrType: e.target.value,
-                      maxUses: e.target.value === "Un solo uso" ? 1 : 5,
-                    })
-                  }
+                  onChange={e => setForm({ ...form, qrType: e.target.value, maxUses: e.target.value === "Un solo uso" ? 1 : 5 })}
                 >
                   <option>Un solo uso</option>
                   <option>Varios usos</option>
@@ -1069,21 +1047,13 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = ""
                     max="50"
                     className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
                     value={form.maxUses}
-                    onChange={e =>
-                      setForm({
-                        ...form,
-                        maxUses: Math.max(2, Number(e.target.value || 2)),
-                      })
-                    }
+                    onChange={e => setForm({ ...form, maxUses: Math.max(2, Number(e.target.value || 2)) })}
                   />
                 </Field>
               )}
 
               <Field label="Observaciones">
-                <Text
-                  value={form.notes}
-                  onChange={e => setForm({ ...form, notes: e.target.value })}
-                />
+                <Text value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
               </Field>
             </div>
 
@@ -1096,6 +1066,12 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = ""
               <b>Personas autorizadas:</b> {form.peopleCount}
             </div>
 
+            {msg && (
+              <div className={`mt-4 rounded-2xl p-3 text-sm font-bold ${msg.includes("correctamente") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+                {msg}
+              </div>
+            )}
+
             <Btn onClick={create} className="mt-4">{saving ? "Guardando..." : "▦ Generar QR"}</Btn>
           </Card>
 
@@ -1104,15 +1080,11 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = ""
               <h3 className="mb-3 font-bold">QR generado</h3>
               <div className="rounded-3xl bg-slate-50 p-4 text-center">
                 <QR value={selectedVisit.id} />
-                <div className="mt-3 font-mono font-black">{selectedVisit.id}</div>
+                <div className="mt-3 break-all font-mono text-xs font-black">{selectedVisit.id}</div>
                 <p className="text-sm text-slate-500">{selectedVisit.visitor}</p>
-
                 <div className="mt-3">
-                  <Badge tone={getVisitQrType(selectedVisit) === "Un solo uso" ? "warn" : "blue"}>
-                    {getVisitQrType(selectedVisit)}
-                  </Badge>
+                  <Badge tone={getVisitQrType(selectedVisit) === "Un solo uso" ? "warn" : "blue"}>{getVisitQrType(selectedVisit)}</Badge>
                 </div>
-
                 <div className="mt-3 rounded-2xl bg-white p-3 text-xs font-bold text-slate-600">
                   <div>Usos disponibles: {getRemainingUses(selectedVisit)} de {getVisitMaxUses(selectedVisit)}</div>
                   <div>Válido: {fmtDate(getVisitValidFrom(selectedVisit))} al {fmtDate(getVisitValidTo(selectedVisit))}</div>
@@ -1126,42 +1098,28 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = ""
 
       <Card>
         <h3 className="mb-3 font-bold">Historial de visitas</h3>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {list.map(v => (
-            <VisitCard key={v.id} v={v} role={role} update={update} visitLogs={visitLogs} setVisitLogs={setVisitLogs} userProfile={userProfile} />
-          ))}
-        </div>
+        {list.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">No hay visitas registradas.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {list.map(v => <VisitCard key={v.id} v={v} role={role} update={updateVisit} />)}
+          </div>
+        )}
       </Card>
 
-      {role === "admin" && (
-        <VisitAccessHistory logs={visitLogs} title="Bitácora de accesos" />
-      )}
+      {!isResidentAccess && <VisitLogsList logs={scopedLogs} />}
     </div>
   );
 }
 
-function VisitCard({ v, role, update, visitLogs = [], setVisitLogs = () => {}, userProfile = null }) {
+function VisitCard({ v, role, update }) {
   async function registerEntry() {
     const check = canUseVisitQr(v);
-
     if (!check.ok) {
       alert(check.message);
       return;
     }
-
-    const patch = buildEntryPatch(v);
-    const ok = await update(v.id, patch);
-    if (ok) {
-      await createVisitAccessLog({
-        visit: { ...v, ...patch },
-        action: "entry",
-        useNumber: patch.uses,
-        userProfile,
-        visitLogs,
-        setVisitLogs,
-      });
-    }
+    await update(v.id, buildEntryPatch(v));
   }
 
   return (
@@ -1171,14 +1129,10 @@ function VisitCard({ v, role, update, visitLogs = [], setVisitLogs = () => {}, u
           <b>{v.visitor}</b>
           <div className="text-sm text-slate-500">Apto {v.apt} · {v.type}</div>
         </div>
-
-        <Badge tone={v.status === "Ingresó" ? "blue" : v.status === "Salió" ? "default" : "warn"}>
-          {v.status}
-        </Badge>
+        <Badge tone={v.status === "Ingresó" ? "blue" : v.status === "Salió" ? "default" : "warn"}>{v.status}</Badge>
       </div>
 
       <div className="mt-2 text-sm text-slate-600">{fmtDate(getVisitValidFrom(v))} al {fmtDate(getVisitValidTo(v))} · {v.time}</div>
-
       {v.plate && <div className="mt-1 text-sm"><b>Placa:</b> {v.plate}</div>}
       {v.notes && <div className="mt-1 text-sm"><b>Obs.:</b> {v.notes}</div>}
 
@@ -1191,120 +1145,132 @@ function VisitCard({ v, role, update, visitLogs = [], setVisitLogs = () => {}, u
         {v.lastUse && <div><b>Último uso:</b> {v.lastUse}</div>}
       </div>
 
-      <div className="mt-2 rounded-xl bg-white px-3 py-2 font-mono text-sm">{v.id}</div>
+      <div className="mt-2 break-all rounded-xl bg-white px-3 py-2 font-mono text-xs">{v.id}</div>
 
-      {!["resident", "owner"].includes(role) && (
+      {![
+        "resident",
+        "owner",
+      ].includes(role) && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Btn className="px-3 py-1.5" onClick={registerEntry}>
-            Entrada
-          </Btn>
-
-          <Btn
-            variant="secondary"
-            className="px-3 py-1.5"
-            onClick={async () => {
-              const patch = { status: "Salió", exitTime: timeNow() };
-              const ok = await update(v.id, patch);
-              if (ok) {
-                await createVisitAccessLog({
-                  visit: { ...v, ...patch },
-                  action: "exit",
-                  useNumber: getVisitUses(v),
-                  userProfile,
-                  visitLogs,
-                  setVisitLogs,
-                });
-              }
-            }}
-          >
-            Salida
-          </Btn>
+          <Btn className="px-3 py-1.5" onClick={registerEntry}>Entrada</Btn>
+          <Btn variant="secondary" className="px-3 py-1.5" onClick={() => update(v.id, { status: "Salió", exitTime: timeNow() })}>Salida</Btn>
         </div>
       )}
     </div>
   );
 }
 
-function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs = () => {}, userProfile = null }) {
-  const [code, setCode] = useState("VST-482913");
+function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfile }) {
+  const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
 
-  const visit = visits.find(v => v.id.toLowerCase() === code.toLowerCase());
+  const latestVisits = [...visits].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 8);
+  const visit = code.trim()
+    ? visits.find(v => String(v.id).toLowerCase() === code.trim().toLowerCase())
+    : null;
 
-  async function update(patch) {
-    if (!visit) return;
+  async function updateVisit(id, patch) {
+    const dbPatch = visitPatchToDb(patch);
 
-    const nextList = visits.map(v => v.id === visit.id ? { ...v, ...patch } : v);
-    setVisits(nextList);
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("visits")
-      .update(visitPatchToDb(patch))
-      .eq("id", visit.id);
+      .update(dbPatch)
+      .eq("id", id)
+      .select("*")
+      .single();
 
     if (error) {
-      console.error("No se pudo actualizar la visita en Supabase:", error);
-      setMessage(`No se pudo actualizar la visita en Supabase. Detalle: ${error.message}`);
-      return false;
+      console.error("No se pudo actualizar la visita:", error);
+      setMessage(`No se pudo actualizar la visita. Detalle: ${error.message}`);
+      return null;
     }
 
-    return true;
+    const normalized = normalizeDbVisit(data);
+    setVisits(visits.map(v => String(v.id) === String(id) ? normalized : v));
+    return normalized;
+  }
+
+  async function createLog(baseVisit, action, useNumber, extraPatch = {}) {
+    const payload = {
+      visit_id: baseVisit.id,
+      building_id: baseVisit.buildingId || "canarias",
+      apt: baseVisit.apt || "",
+      visitor: baseVisit.visitor || "",
+      plate: extraPatch.plate ?? baseVisit.plate ?? "",
+      action,
+      use_number: Number(useNumber || getVisitUses(baseVisit) || 0),
+      guard_user_id: userProfile?.id || null,
+      guard_name: userProfile?.fullName || userProfile?.email || "",
+      people_count: getVisitPeopleCount(baseVisit),
+      notes: baseVisit.notes || "",
+      plate_photo: extraPatch.platePhoto ?? baseVisit.platePhoto ?? "",
+    };
+
+    const { data, error } = await supabase
+      .from("visit_logs")
+      .insert([payload])
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("No se pudo guardar la bitácora:", error);
+      setMessage(`La visita se actualizó, pero no se pudo guardar la bitácora. Detalle: ${error.message}`);
+      return null;
+    }
+
+    const normalized = normalizeDbVisitLog(data);
+    if (setVisitLogs) setVisitLogs([normalized, ...visitLogs]);
+    return normalized;
+  }
+
+  async function updateLocalAndDb(patch) {
+    if (!visit) return null;
+    return await updateVisit(visit.id, patch);
   }
 
   function photo(file) {
-    if (!file) return;
-
+    if (!file || !visit) return;
     const reader = new FileReader();
-    reader.onload = () => update({ platePhoto: String(reader.result || "") });
+    reader.onload = async () => {
+      await updateLocalAndDb({ platePhoto: String(reader.result || "") });
+    };
     reader.readAsDataURL(file);
   }
 
   async function registerEntry() {
-    if (!visit) return;
+    if (!visit) {
+      setMessage("Primero ingresa o selecciona un código QR.");
+      return;
+    }
 
     const check = canUseVisitQr(visit);
-
     if (!check.ok) {
       setMessage(check.message);
       return;
     }
 
+    const nextUses = getVisitUses(visit) + 1;
     const patch = buildEntryPatch(visit);
-    const nextUses = patch.uses;
-    const ok = await update(patch);
+    const updated = await updateVisit(visit.id, patch);
 
-    if (!ok) return;
+    if (!updated) return;
 
-    await createVisitAccessLog({
-      visit: { ...visit, ...patch },
-      action: "entry",
-      useNumber: nextUses,
-      userProfile,
-      visitLogs,
-      setVisitLogs,
-    });
-
-    setMessage(
-      `Entrada registrada correctamente. Usos disponibles restantes: ${Math.max(0, getVisitMaxUses(visit) - nextUses)}.`
-    );
+    await createLog(updated, "entry", nextUses, patch);
+    setMessage(`Entrada registrada correctamente. Usos disponibles restantes: ${Math.max(0, getVisitMaxUses(updated) - nextUses)}.`);
   }
 
   async function registerExit() {
-    if (!visit) return;
+    if (!visit) {
+      setMessage("Primero ingresa o selecciona un código QR.");
+      return;
+    }
+
     const patch = { status: "Salió", exitTime: timeNow() };
-    const ok = await update(patch);
+    const updated = await updateVisit(visit.id, patch);
 
-    if (!ok) return;
+    if (!updated) return;
 
-    await createVisitAccessLog({
-      visit: { ...visit, ...patch },
-      action: "exit",
-      useNumber: getVisitUses(visit),
-      userProfile,
-      visitLogs,
-      setVisitLogs,
-    });
-
+    await createLog(updated, "exit", getVisitUses(updated), patch);
     setMessage("Salida registrada correctamente.");
   }
 
@@ -1315,17 +1281,13 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs = () => {}
       <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
         <Card>
           <h3 className="mb-3 font-bold">Buscar código</h3>
-
           <div className="flex gap-3">
             <input
               className="flex-1 rounded-xl border px-3 py-2 font-mono"
               value={code}
-              onChange={e => {
-                setCode(e.target.value);
-                setMessage("");
-              }}
+              onChange={e => { setCode(e.target.value); setMessage(""); }}
+              placeholder="Pega o escanea el código QR"
             />
-
             <Btn>Validar</Btn>
           </div>
 
@@ -1333,35 +1295,49 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs = () => {}
             <div className="text-6xl">▦</div>
             <b>Aquí irá el escáner de cámara</b>
           </div>
+
+          {latestVisits.length > 0 && (
+            <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm">
+              <b>Últimas visitas autorizadas</b>
+              <div className="mt-2 space-y-2">
+                {latestVisits.map(v => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => { setCode(v.id); setMessage(""); }}
+                    className="w-full rounded-xl bg-white px-3 py-2 text-left text-xs font-bold hover:bg-slate-100"
+                  >
+                    {v.visitor} · Apto {v.apt}<br />
+                    <span className="break-all font-mono text-slate-400">{v.id}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card>
-          {!visit ? (
+          {!code.trim() ? (
+            <div className="rounded-2xl bg-slate-50 p-4 text-slate-600">
+              Ingresa un código QR o selecciona una visita reciente.
+            </div>
+          ) : !visit ? (
             <div className="rounded-2xl bg-rose-50 p-4 text-rose-700">
               Código no encontrado.
             </div>
           ) : (
             <div className="space-y-3">
               {isTodayWithinVisitDates(visit) ? (
-                <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-800">
-                  Visita autorizada. Código vigente para hoy.
-                </div>
+                <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-800">Visita autorizada. Código vigente para hoy.</div>
               ) : (
-                <div className="rounded-2xl bg-amber-50 p-4 text-amber-800">
-                  Código encontrado, pero no está vigente hoy.
-                </div>
+                <div className="rounded-2xl bg-amber-50 p-4 text-amber-800">Código encontrado, pero no está vigente hoy.</div>
               )}
 
-              {message && (
-                <div className="rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-700">
-                  {message}
-                </div>
-              )}
+              {message && <div className="rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-700">{message}</div>}
 
               <div className="rounded-2xl bg-slate-50 p-4">
                 <div className="text-2xl font-black">{visit.visitor}</div>
                 <div className="text-slate-500">Apartamento {visit.apt}</div>
-
                 <div className="mt-3 rounded-xl bg-white p-3 text-sm">
                   <div><b>Tipo de QR:</b> {getVisitQrType(visit)}</div>
                   <div><b>Usos realizados:</b> {getVisitUses(visit)} de {getVisitMaxUses(visit)}</div>
@@ -1372,44 +1348,22 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs = () => {}
                 </div>
 
                 {visit.notes && (
-                  <div
-                    className="mt-3 rounded-xl border-l-4 bg-white px-3 py-2"
-                    style={{ borderColor: BRAND.red }}
-                  >
+                  <div className="mt-3 rounded-xl border-l-4 bg-white px-3 py-2" style={{ borderColor: BRAND.red }}>
                     <b>Observación:</b><br />{visit.notes}
                   </div>
                 )}
 
                 <label className="mt-3 block text-xs font-bold">
                   Placa observada
-                  <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2 text-sm"
-                    value={visit.plate || ""}
-                    onChange={e => update({ plate: e.target.value.toUpperCase() })}
-                  />
+                  <input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" value={visit.plate || ""} onChange={e => updateLocalAndDb({ plate: e.target.value.toUpperCase() })} />
                 </label>
 
-                <label
-                  className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white"
-                  style={{ backgroundColor: BRAND.red }}
-                >
+                <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white" style={{ backgroundColor: BRAND.red }}>
                   📷 Tomar foto de placa
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={e => photo(e.target.files?.[0])}
-                  />
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => photo(e.target.files?.[0])} />
                 </label>
 
-                {visit.platePhoto && (
-                  <img
-                    src={visit.platePhoto}
-                    alt="Placa"
-                    className="mt-3 h-32 w-full rounded-xl object-cover"
-                  />
-                )}
+                {visit.platePhoto && <img src={visit.platePhoto} alt="Placa" className="mt-3 h-32 w-full rounded-xl object-cover" />}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1421,89 +1375,8 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs = () => {}
         </Card>
       </div>
 
-      <VisitAccessHistory logs={visitLogs} title="Historial de accesos" />
+      <VisitLogsList logs={visitLogs} title="Últimos accesos registrados" />
     </div>
-  );
-}
-
-function VisitAccessHistory({ logs = [], title = "Bitácora de accesos" }) {
-  const [q, setQ] = useState("");
-  const [actionFilter, setActionFilter] = useState("Todos");
-
-  const rows = logs
-    .filter(log => {
-      const matchesText = `${log.apt} ${log.visitor} ${log.plate} ${log.guardName} ${log.action}`.toLowerCase().includes(q.toLowerCase());
-      const matchesAction = actionFilter === "Todos" || log.action === actionFilter;
-      return matchesText && matchesAction;
-    })
-    .sort((a, b) => new Date(b.eventAt || 0) - new Date(a.eventAt || 0))
-    .slice(0, 80);
-
-  return (
-    <Card>
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h3 className="font-bold">{title}</h3>
-          <p className="text-sm font-medium text-slate-500">Entradas y salidas registradas por guardia.</p>
-        </div>
-
-        <div className="flex flex-col gap-2 md:flex-row">
-          <input
-            className="rounded-xl border px-3 py-2 text-sm"
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Buscar apto, visitante, placa o guardia"
-          />
-
-          <select
-            className="rounded-xl border px-3 py-2 text-sm"
-            value={actionFilter}
-            onChange={e => setActionFilter(e.target.value)}
-          >
-            <option>Todos</option>
-            <option value="entry">Entradas</option>
-            <option value="exit">Salidas</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="text-slate-500">
-            <tr>
-              <th className="py-2">Fecha y hora</th>
-              <th>Movimiento</th>
-              <th>Apto</th>
-              <th>Visitante</th>
-              <th>Uso</th>
-              <th>Personas</th>
-              <th>Placa</th>
-              <th>Guardia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(log => (
-              <tr key={log.id} className="border-t">
-                <td className="py-3 font-bold">{fmtDateTime(log.eventAt)}</td>
-                <td><Badge tone={log.action === "entry" ? "blue" : "default"}>{formatVisitLogAction(log.action)}</Badge></td>
-                <td>{log.apt || "-"}</td>
-                <td>{log.visitor || "-"}</td>
-                <td>{log.useNumber || "-"}</td>
-                <td>{log.peopleCount || 1}</td>
-                <td>{log.plate || "-"}</td>
-                <td>{log.guardName || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {!rows.length && (
-        <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
-          Todavía no hay registros de entrada o salida para mostrar.
-        </div>
-      )}
-    </Card>
   );
 }
 
@@ -3222,13 +3095,8 @@ export default function NeoVecinoMVP() {
     { id: "pay-c-1", buildingId: "centro", apt: "301", concept: "Cuota mantenimiento abril", amount: 95, status: "Vencido", date: "2026-04-01" },
   ]);
 
-  const [visits, setAllVisits] = useState(() => [
-    ...seedVisits.map(v => ({ ...v, buildingId: "canarias" })),
-    { id: "VST-111222", buildingId: "lomas", visitor: "Entrega farmacia", apt: "101", type: "Delivery", date: "2026-05-01", time: "3:00 p.m. - 4:00 p.m.", status: "Pendiente", identity: "", plate: "", notes: "Entrega autorizada.", entryTime: "", exitTime: "", platePhoto: "" },
-    { id: "VST-333444", buildingId: "centro", visitor: "Técnico elevador", apt: "301", type: "Proveedor", date: "2026-05-01", time: "9:00 a.m. - 11:00 a.m.", status: "Pendiente", identity: "", plate: "", notes: "Mantenimiento preventivo.", entryTime: "", exitTime: "", platePhoto: "" },
-  ]);
+  const [visits, setAllVisits] = useState([]);
   const [visitLogs, setAllVisitLogs] = useState([]);
-
 
   const [reservations, setAllReservations] = useState(() => [
     ...seedReservations.map(r => ({ ...r, buildingId: "canarias" })),
@@ -3445,16 +3313,20 @@ export default function NeoVecinoMVP() {
       setDataError("");
 
       try {
-        const [buildingsResult, apartmentsResult, residentsResult, appUsersResult] = await Promise.all([
+        const [buildingsResult, apartmentsResult, residentsResult, appUsersResult, visitsResult, visitLogsResult] = await Promise.all([
           supabase.from("buildings").select("*").order("name"),
           supabase.from("apartments").select("*").order("number"),
           supabase.from("residents").select("*").order("name"),
           supabase.from("app_users").select("*").order("email"),
+          supabase.from("visits").select("*").order("created_at", { ascending: false }),
+          supabase.from("visit_logs").select("*").order("event_at", { ascending: false }),
         ]);
 
         if (buildingsResult.error) throw buildingsResult.error;
         if (apartmentsResult.error) throw apartmentsResult.error;
         if (residentsResult.error) throw residentsResult.error;
+        if (visitsResult.error) console.warn("No se pudieron cargar visitas desde Supabase:", visitsResult.error);
+        if (visitLogsResult.error) console.warn("No se pudo cargar la bitácora de visitas desde Supabase:", visitLogsResult.error);
 
         const dbBuildings = (buildingsResult.data || []).map((b) => ({
           id: b.id,
@@ -3487,6 +3359,9 @@ export default function NeoVecinoMVP() {
           notes: r.notes,
         }));
 
+        const dbVisits = visitsResult.error ? [] : (visitsResult.data || []).map(normalizeDbVisit);
+        const dbVisitLogs = visitLogsResult.error ? [] : (visitLogsResult.data || []).map(normalizeDbVisitLog);
+
         if (!appUsersResult.error) {
           const dbAppUsers = (appUsersResult.data || []).map((u) => ({
             id: u.id,
@@ -3507,6 +3382,8 @@ export default function NeoVecinoMVP() {
         if (dbBuildings.length) setBuildings(dbBuildings);
         if (dbApartments.length) setApartments(dbApartments);
         if (dbResidents.length) setAllResidents(dbResidents);
+        setAllVisits(dbVisits);
+        setAllVisitLogs(dbVisitLogs);
 
         const announcementsResult = await supabase
           .from("announcements")
@@ -3529,32 +3406,6 @@ export default function NeoVecinoMVP() {
           if (dbAnnouncements.length) setAllAnnouncements(dbAnnouncements);
         } else {
           console.warn("No se pudieron cargar anuncios desde Supabase:", announcementsResult.error);
-        }
-
-
-        const visitsResult = await supabase
-          .from("visits")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (!visitsResult.error) {
-          const dbVisits = (visitsResult.data || []).map(mapVisitFromDb);
-          setAllVisits(dbVisits);
-        } else {
-          console.warn("No se pudieron cargar visitas desde Supabase:", visitsResult.error);
-        }
-
-
-        const visitLogsResult = await supabase
-          .from("visit_logs")
-          .select("*")
-          .order("event_at", { ascending: false });
-
-        if (!visitLogsResult.error) {
-          const dbVisitLogs = (visitLogsResult.data || []).map(mapVisitLogFromDb);
-          setAllVisitLogs(dbVisitLogs);
-        } else {
-          console.warn("No se pudo cargar la bitácora de visitas desde Supabase:", visitLogsResult.error);
         }
       } catch (error) {
         console.error("Error cargando datos desde Supabase:", error);
@@ -3588,8 +3439,8 @@ export default function NeoVecinoMVP() {
           buildingId: selectedBuilding,
           number: residentAptNumber || "Sin apartamento asignado",
           level: "",
-          owner: role === "owner" ? (userProfile?.fullName || userProfile?.email || "Propietario") : "-",
-          resident: role === "resident" ? (userProfile?.fullName || userProfile?.email || "Residente") : "",
+          owner: "-",
+          resident: userProfile?.fullName || userProfile?.email || "Residente",
           balance: 0,
           status: "Asignado",
         }
@@ -3621,12 +3472,12 @@ export default function NeoVecinoMVP() {
   }
 
   const pages = {
-    home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setAllVisitLogs)} userProfile={userProfile} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
+    home: <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
     users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
-    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setAllVisitLogs)} userProfile={userProfile} />,
+    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} buildingId={selectedBuilding} userProfile={userProfile} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setAllVisitLogs)} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} />,
     tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
