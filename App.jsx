@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "VISITAS_GUARD_UNIFIED_SUPABASE";
+const APP_VERSION = "VISITAS_SUPABASE_FINAL_SIN_DEMO_VISIT_LOGS_FIX";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -479,6 +479,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
     ["docs", "Docs", "📄"],
   ],
   guard: [
+    ["home", "Guardia", "🛡️"],
     ["visits", "Visitas", "📋"],
   ],
 };
@@ -499,7 +500,8 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
             </div>
             <div>
               <b className="text-lg font-black text-slate-950">NeoVecino</b>
-              <div className="text-xs font-bold text-slate-500">Modo {label}{userProfile?.fullName ? ` · ${userProfile.fullName}` : ""}</div><div className="text-[10px] font-bold text-slate-400">{APP_VERSION}</div>
+              <div className="text-xs font-bold text-slate-500">Modo {label}{userProfile?.fullName ? ` · ${userProfile.fullName}` : ""}</div>
+              <div className="text-[10px] font-black text-slate-400">{APP_VERSION}</div>
             </div>
           </div>
 
@@ -1235,6 +1237,7 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
 
   async function addLog(currentVisit, action, useNumber) {
     const payload = buildVisitLogPayload(currentVisit, action, useNumber, userProfile);
+
     const { data, error } = await supabase
       .from("visit_logs")
       .insert([payload])
@@ -1242,12 +1245,14 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
       .single();
 
     if (error) {
-      console.error("No se pudo guardar visit_log:", error);
+      console.error("No se pudo guardar visit_log:", error, payload);
       setMessage(`El acceso se actualizó, pero no se pudo guardar la bitácora. Detalle: ${error.message}`);
-      return;
+      return null;
     }
 
-    if (setVisitLogs) setVisitLogs([visitLogFromDb(data), ...visitLogs]);
+    const createdLog = visitLogFromDb(data);
+    if (setVisitLogs) setVisitLogs([createdLog, ...visitLogs]);
+    return createdLog;
   }
 
   async function photo(file) {
@@ -1273,8 +1278,10 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
     const nextUses = getVisitUses(visit) + 1;
     const updated = await updateVisit(buildEntryPatch(visit));
     if (updated) {
-      await addLog(updated, "entry", nextUses);
-      setMessage(`Entrada registrada correctamente. Usos disponibles restantes: ${Math.max(0, getVisitMaxUses(updated) - nextUses)}.`);
+      const log = await addLog(updated, "entry", nextUses);
+      if (log) {
+        setMessage(`Entrada registrada correctamente y guardada en bitácora. Usos disponibles restantes: ${Math.max(0, getVisitMaxUses(updated) - nextUses)}.`);
+      }
     }
     setSaving(false);
   }
@@ -1285,8 +1292,10 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
     setSaving(true);
     const updated = await updateVisit({ status: "Salió", exitTime: timeNow() });
     if (updated) {
-      await addLog(updated, "exit", getVisitUses(updated));
-      setMessage("Salida registrada correctamente.");
+      const log = await addLog(updated, "exit", getVisitUses(updated));
+      if (log) {
+        setMessage("Salida registrada correctamente y guardada en bitácora.");
+      }
     }
     setSaving(false);
   }
@@ -3269,7 +3278,7 @@ export default function NeoVecinoMVP() {
     const nextProfile = normalizeProfile(data, user);
     setUserProfile(nextProfile);
     setRole(nextProfile.role);
-    setActive(nextProfile.role === "guard" ? "visits" : "home");
+    setActive("home");
     setSelectedBuilding(nextProfile.buildingId || "canarias");
     return nextProfile;
   }
@@ -3540,30 +3549,15 @@ export default function NeoVecinoMVP() {
     );
   }
 
-  const guardVisitsPage = (
-    <Visits
-      role={role}
-      visits={visits}
-      setVisits={setAllVisits}
-      aptNumber=""
-      selectedBuilding={selectedBuilding}
-      visitLogs={visitLogs}
-      setVisitLogs={setVisitLogs}
-      userProfile={userProfile}
-    />
-  );
-
   const pages = {
     home: role === "guard"
-      ? guardVisitsPage
+      ? <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />
       : <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
     users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
-    visits: role === "guard"
-      ? guardVisitsPage
-      : <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
+    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} />,
     tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
