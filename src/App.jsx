@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "QR_SCANNER_SESION_ESTABLE_V4";
+const APP_VERSION = "REALTIME_TICKETS_RESERVAS_ANUNCIOS_V5";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -1773,9 +1773,112 @@ function findOverlappingReservation(reservations, area, date, start, hours) {
   return reservations.find(r => reservationOverlaps(r, area, date, start, hours));
 }
 
-function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
+
+function upsertById(list, item) {
+  if (!item?.id) return list;
+  const exists = list.some(x => String(x.id) === String(item.id));
+  if (exists) {
+    return list.map(x => String(x.id) === String(item.id) ? item : x);
+  }
+  return [item, ...list];
+}
+
+function removeById(list, id) {
+  return list.filter(x => String(x.id) !== String(id));
+}
+
+function reservationFromDb(row) {
+  return {
+    id: row.id,
+    buildingId: row.building_id || "canarias",
+    apt: row.apt || "",
+    area: row.area || "Área social techada",
+    date: row.date || todayISO(),
+    start: row.start_time || row.start || "18:00",
+    hours: Number(row.hours || 1),
+    time: row.time_label || row.time || "",
+    cleaning: Number(row.cleaning || 0),
+    deposit: Number(row.deposit || 0),
+    status: row.status || "Pendiente",
+    requestedBy: row.requested_by || "",
+    requestedByName: row.requested_by_name || "",
+    reviewedBy: row.reviewed_by || "",
+    reviewedByName: row.reviewed_by_name || "",
+    reviewedAt: row.reviewed_at || "",
+    notes: row.notes || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function reservationToDb(r) {
+  return {
+    building_id: r.buildingId || "canarias",
+    apt: r.apt || "",
+    area: r.area || "Área social techada",
+    date: r.date || todayISO(),
+    start_time: r.start || "18:00",
+    hours: Number(r.hours || 1),
+    time_label: r.time || "",
+    cleaning: Number(r.cleaning || 0),
+    deposit: Number(r.deposit || 0),
+    status: r.status || "Pendiente",
+    requested_by: r.requestedBy || null,
+    requested_by_name: r.requestedByName || "",
+    reviewed_by: r.reviewedBy || null,
+    reviewed_by_name: r.reviewedByName || "",
+    reviewed_at: r.reviewedAt || null,
+    notes: r.notes || "",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function ticketFromDb(row) {
+  return {
+    id: row.id,
+    buildingId: row.building_id || "canarias",
+    apt: row.apt || "",
+    title: row.title || "",
+    status: row.status || "Abierto",
+    date: row.date || row.created_at?.slice(0, 10) || todayISO(),
+    createdBy: row.created_by || "",
+    createdByName: row.created_by_name || "",
+    updatedAt: row.updated_at || "",
+    createdAt: row.created_at,
+  };
+}
+
+function ticketToDb(t) {
+  return {
+    building_id: t.buildingId || "canarias",
+    apt: t.apt || "",
+    title: t.title || "",
+    status: t.status || "Abierto",
+    date: t.date || todayISO(),
+    created_by: t.createdBy || null,
+    created_by_name: t.createdByName || "",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function announcementFromDb(a) {
+  return {
+    id: a.id,
+    buildingId: a.building_id || "canarias",
+    target: a.target || "Todos",
+    apt: a.apt || "",
+    title: a.title || "",
+    message: a.message || "",
+    priority: a.priority || "Normal",
+    status: a.status || "Enviado",
+    createdAt: a.created_at,
+  };
+}
+
+function Reservations({ role, reservations, setReservations, aptNumber = "", selectedBuilding = "canarias", userProfile }) {
   const [form, setForm] = useState({ area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
   const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const maxHours = getMaxReservableHours(form.area, form.date, form.start);
   const scheduleText = getScheduleText(form.area, form.date);
@@ -1793,7 +1896,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
     ? findOverlappingReservation(reservations, form.area, form.date, form.start, safeHours)
     : null;
 
-  const reservationWasSent = notice === "Solicitud enviada.";
+  const reservationWasSent = notice === "Solicitud enviada en Supabase.";
   const blockingConflict = conflict && !reservationWasSent;
 
   const duplicate = reservations.some(r =>
@@ -1830,7 +1933,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
     setNotice("");
   }
 
-  function add() {
+  async function add() {
     if (maxHours <= 0) {
       setNotice(`Ese horario no está disponible. Horario permitido para ${form.area}: ${scheduleText}.`);
       return;
@@ -1851,8 +1954,8 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
       return;
     }
 
-    const r = {
-      id: `res-${Date.now()}`,
+    const payload = reservationToDb({
+      buildingId: selectedBuilding,
       apt: aptNumber || "",
       area: form.area,
       date: form.date,
@@ -1862,14 +1965,54 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
       cleaning,
       deposit,
       status: "Pendiente",
-    };
+      requestedBy: userProfile?.id || "",
+      requestedByName: userProfile?.fullName || userProfile?.email || "",
+      notes: "",
+    });
 
-    setReservations([r, ...reservations]);
-    setNotice("Solicitud enviada.");
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("reservations")
+      .insert([payload])
+      .select("*")
+      .single();
+    setSaving(false);
+
+    if (error) {
+      console.error("No se pudo guardar la reserva:", error);
+      setNotice(`No se pudo guardar la reserva en Supabase. Detalle: ${error.message}`);
+      return;
+    }
+
+    const created = reservationFromDb(data);
+    setReservations([created, ...reservations]);
+    setNotice("Solicitud enviada en Supabase.");
   }
 
-  function approve(id, status) {
-    setReservations(reservations.map(r => r.id === id ? { ...r, status } : r));
+  async function approve(id, status) {
+    const payload = {
+      status,
+      reviewed_by: userProfile?.id || null,
+      reviewed_by_name: userProfile?.fullName || userProfile?.email || "",
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("reservations")
+      .update(payload)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("No se pudo actualizar la reserva:", error);
+      alert(`No se pudo actualizar la reserva.\n\nDetalle: ${error.message}`);
+      return;
+    }
+
+    const updated = reservationFromDb(data);
+    setReservations(reservations.map(r => String(r.id) === String(id) ? updated : r));
   }
 
   return (
@@ -1898,37 +2041,17 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
                 <input type="time" className="mt-1 w-full rounded-xl border px-3 py-2" value={form.start} onChange={e => updateStart(e.target.value)} />
               </Field>
 
-              <Field label={maxHours > 0 ? `Duración máxima según horario: ${maxHours} hora(s)` : "Duración no disponible"}>
-                <select
-                  className="mt-1 w-full rounded-xl border px-3 py-2 disabled:bg-slate-100 disabled:text-slate-400"
-                  value={maxHours > 0 ? safeHours : ""}
-                  disabled={maxHours <= 0}
-                  onChange={e => setForm({ ...form, hours: Number(e.target.value) })}
-                >
-                  {maxHours <= 0 ? (
-                    <option value="">Horario no disponible</option>
-                  ) : (
-                    Array.from({ length: maxHours }, (_, i) => i + 1).map(h => (
-                      <option key={h} value={h}>{h} {h === 1 ? "hora" : "horas"}</option>
-                    ))
-                  )}
-                </select>
+              <Field label={maxHours > 0 ? `Duración máxima según horario: ${maxHours} hora(s)` : "Duración"}>
+                <input type="number" min="1" max={Math.max(1, maxHours || getBaseMaxHours(form.area))} className="mt-1 w-full rounded-xl border px-3 py-2" value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} />
               </Field>
 
-              <div className={maxHours > 0 ? "rounded-2xl bg-amber-50 p-3 text-sm" : "rounded-2xl bg-rose-50 p-3 text-sm text-rose-700"}>
-                <b>Horario permitido del área:</b> {scheduleText}<br />
-                <b>Horario solicitado:</b> {maxHours > 0 ? range : "No disponible"}<br />
-                <b>Limpieza:</b> {lps(cleaning)}<br />
-                <b>Depósito:</b> {lps(deposit)}<br />
-                <b>Total:</b> {lps(cleaning + deposit)}<br />
-                {form.area === "Coworking" && <span>Coworking no tiene cuota de limpieza ni depósito.</span>}
-              </div>
-
-              {reservationWasSent && (
-                <div className="rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
-                  Tu solicitud de reserva ha sido enviada correctamente. El horario solicitado queda registrado como pendiente mientras administración la revisa.
+              <div className="rounded-2xl bg-slate-50 p-3 text-sm">
+                <b>Horario:</b> {range}<br />
+                <b>Limpieza:</b> {lps(cleaning)} · <b>Depósito:</b> {lps(deposit)}
+                <div className="mt-2 text-xs font-bold text-slate-500">
+                  La solicitud queda pendiente mientras administración la revisa.
                 </div>
-              )}
+              </div>
 
               {blockingConflict && (
                 <div className="rounded-2xl bg-rose-50 p-3 text-sm font-bold text-rose-700">
@@ -1951,9 +2074,10 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
               )}
 
               {notice && !reservationWasSent && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{notice}</div>}
+              {reservationWasSent && <div className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{notice}</div>}
 
-              <Btn onClick={add} variant={maxHours <= 0 || blockingConflict ? "secondary" : "primary"}>
-                {maxHours <= 0 ? "Horario no disponible" : reservationWasSent ? "Solicitud enviada" : blockingConflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
+              <Btn onClick={add} variant={saving || maxHours <= 0 || blockingConflict ? "secondary" : "primary"}>
+                {saving ? "Guardando..." : maxHours <= 0 ? "Horario no disponible" : reservationWasSent ? "Solicitud enviada" : blockingConflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
               </Btn>
             </div>
           </div>
@@ -1972,6 +2096,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
               <div className="mt-2 text-sm text-slate-500">Apto {r.apt} · {fmtDate(r.date)}</div>
               <div className="mt-1 text-sm">{r.time}</div>
               <div className="mt-3 rounded-xl bg-white p-3 text-xs"><b>Total:</b> {lps((r.cleaning || 0) + (r.deposit || 0))}</div>
+              {r.requestedByName && <div className="mt-2 text-xs font-bold text-slate-400">Solicitado por: {r.requestedByName}</div>}
               {role === "admin" && r.status === "Pendiente" && (
                 <div className="mt-3 flex gap-2">
                   <Btn className="px-3 py-1.5" onClick={() => approve(r.id, "Aprobada")}>Aprobar</Btn>
@@ -1981,16 +2106,22 @@ function Reservations({ role, reservations, setReservations, aptNumber = "" }) {
             </div>
           ))}
         </div>
+        {!rows.length && (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+            No hay reservas para mostrar.
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
 
-function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
+function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding = "canarias", userProfile }) {
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
+  const [saving, setSaving] = useState(false);
 
   const baseRows = ["resident", "owner"].includes(role) ? tickets.filter(t => String(t.apt) === String(aptNumber)) : tickets;
 
@@ -2000,31 +2131,59 @@ function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
     return matchesText && matchesStatus;
   });
 
-  function add() {
+  async function add() {
     if (!text.trim()) return;
 
-    setTickets([
-      {
-        id: `tic-${Date.now()}`,
-        apt: aptNumber || "",
-        title: text,
-        status: "Abierto",
-        date: todayISO(),
-      },
-      ...tickets,
-    ]);
+    const payload = ticketToDb({
+      buildingId: selectedBuilding,
+      apt: aptNumber || "",
+      title: text.trim(),
+      status: "Abierto",
+      date: todayISO(),
+      createdBy: userProfile?.id || "",
+      createdByName: userProfile?.fullName || userProfile?.email || "",
+    });
 
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("tickets")
+      .insert([payload])
+      .select("*")
+      .single();
+    setSaving(false);
+
+    if (error) {
+      console.error("No se pudo crear el ticket:", error);
+      alert(`No se pudo crear el ticket en Supabase.\n\nDetalle: ${error.message}`);
+      return;
+    }
+
+    const created = ticketFromDb(data);
+    setTickets([created, ...tickets]);
     setText("");
   }
 
-  function updateStatus(id, status) {
-    setTickets(
-      tickets.map(t =>
-        t.id === id
-          ? { ...t, status, updatedAt: todayISO() }
-          : t
-      )
-    );
+  async function updateStatus(id, status) {
+    const payload = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("tickets")
+      .update(payload)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("No se pudo actualizar el ticket:", error);
+      alert(`No se pudo actualizar el ticket.\n\nDetalle: ${error.message}`);
+      return;
+    }
+
+    const updated = ticketFromDb(data);
+    setTickets(tickets.map(t => String(t.id) === String(id) ? updated : t));
   }
 
   function tone(status) {
@@ -2052,7 +2211,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
               onChange={e => setText(e.target.value)}
               placeholder="Describe el problema"
             />
-            <Btn onClick={add}>Crear ticket</Btn>
+            <Btn onClick={add} variant={saving ? "secondary" : "primary"}>{saving ? "Guardando..." : "Crear ticket"}</Btn>
           </div>
         </Card>
       )}
@@ -2118,16 +2277,22 @@ function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
                 <div>
                   <b>{t.title}</b>
                   <div className="text-sm text-slate-500">
-                    Apto {t.apt} · {fmtDate(t.date)}
+                    Apto {t.apt || "-"} · {fmtDate(t.date)}
                   </div>
                 </div>
 
                 <Badge tone={tone(t.status)}>{t.status}</Badge>
               </div>
 
+              {t.createdByName && (
+                <div className="mt-2 text-xs font-bold text-slate-400">
+                  Creado por: {t.createdByName}
+                </div>
+              )}
+
               {t.updatedAt && (
                 <div className="mt-2 text-xs font-bold text-slate-400">
-                  Última actualización: {fmtDate(t.updatedAt)}
+                  Última actualización: {fmtDateTime(t.updatedAt)}
                 </div>
               )}
 
@@ -2187,6 +2352,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "" }) {
     </div>
   );
 }
+
 
 function Docs({ role, docs, setDocs }) {
   const [form, setForm] = useState({ title: "", fileName: "", type: "", size: "", dataUrl: "" });
@@ -3313,17 +3479,8 @@ export default function NeoVecinoMVP() {
   const [visits, setAllVisits] = useState([]);
   const [visitLogs, setVisitLogs] = useState([]);
 
-  const [reservations, setAllReservations] = useState(() => [
-    ...seedReservations.map(r => ({ ...r, buildingId: "canarias" })),
-    { id: "res-l-1", buildingId: "lomas", apt: "101", area: "Coworking", date: "2026-05-03", start: "09:00", hours: 2, time: "9:00 a.m. - 11:00 a.m.", cleaning: 0, deposit: 0, status: "Aprobada" },
-    { id: "res-c-1", buildingId: "centro", apt: "301", area: "Área social techada", date: "2026-05-04", start: "17:00", hours: 4, time: "5:00 p.m. - 9:00 p.m.", cleaning: 1600, deposit: 1000, status: "Pendiente" },
-  ]);
-
-  const [tickets, setAllTickets] = useState(() => [
-    ...seedTickets.map(t => ({ ...t, buildingId: "canarias" })),
-    { id: "tic-l-1", buildingId: "lomas", apt: "102", title: "Portón vehicular lento", status: "Abierto", date: "2026-05-01" },
-    { id: "tic-c-1", buildingId: "centro", apt: "301", title: "Fuga en cuarto de aseo", status: "En proceso", date: "2026-04-30" },
-  ]);
+  const [reservations, setAllReservations] = useState([]);
+  const [tickets, setAllTickets] = useState([]);
 
   const [docs, setAllDocs] = useState(() => [
     ...seedDocs.map(d => ({ ...d, buildingId: "canarias" })),
@@ -3385,7 +3542,7 @@ export default function NeoVecinoMVP() {
   }
 
   async function loadUserProfile(user) {
-    if (!user) return userProfile || null;
+    if (!user) return null;
 
     setAuthError("");
 
@@ -3398,34 +3555,24 @@ export default function NeoVecinoMVP() {
           .select("*")
           .eq("id", user.id)
           .maybeSingle(),
-        20000,
+        10000,
         "el perfil app_users"
       );
     } catch (error) {
-      console.warn("La consulta del perfil app_users tardó demasiado o falló. Se conservará la sesión actual:", error);
-
-      if (userProfile && role) {
-        setAuthError("Reconectando sesión... La app conservará tu acceso mientras vuelve a cargar el perfil.");
-        return userProfile;
-      }
-
-      setAuthError("La app no pudo cargar el perfil del usuario desde Supabase. Revisa la conexión e intenta refrescar la página.");
+      console.error("La consulta del perfil app_users tardó demasiado o falló:", error);
+      setUserProfile(null);
+      setRole(null);
+      setAuthError("La app no pudo cargar el perfil del usuario desde Supabase. Revisa la conexión, las políticas RLS de app_users o intenta cerrar sesión y volver a entrar.");
       return null;
     }
 
     const { data, error } = profileResult;
 
     if (error || !data) {
-      console.warn("No se pudo cargar el perfil app_users. Se conservará la sesión actual si ya existe:", error);
-
-      if (userProfile && role) {
-        setAuthError("Reconectando perfil... La sesión sigue activa.");
-        return userProfile;
-      }
-
+      console.error("No se pudo cargar el perfil app_users:", error);
       setUserProfile(null);
       setRole(null);
-      setAuthError("Tu usuario existe en Supabase Auth, pero aún no tiene perfil activo en app_users.");
+      setAuthError("Tu usuario existe en Supabase Auth, pero aún no tiene perfil en app_users. Revisa que el UID esté creado en la tabla app_users.");
       return null;
     }
 
@@ -3439,9 +3586,8 @@ export default function NeoVecinoMVP() {
     const nextProfile = normalizeProfile(data, user);
     setUserProfile(nextProfile);
     setRole(nextProfile.role);
-    setActive(prev => prev || "home");
+    setActive("home");
     setSelectedBuilding(nextProfile.buildingId || "canarias");
-    setAuthError("");
     return nextProfile;
   }
 
@@ -3473,17 +3619,14 @@ export default function NeoVecinoMVP() {
       let sessionResult;
 
       try {
-        sessionResult = await withTimeout(supabase.auth.getSession(), 20000, "la sesión de Supabase");
+        sessionResult = await withTimeout(supabase.auth.getSession(), 10000, "la sesión de Supabase");
       } catch (error) {
-        console.warn("La verificación de sesión tardó demasiado o falló. No se cerrará la sesión automáticamente:", error);
-
-        if (!session && !role) {
-          setAuthError("No se pudo verificar la sesión. Refresca la página e intenta de nuevo.");
-        } else {
-          setAuthError("Reconectando sesión... Conservando acceso actual.");
-        }
-
-        if (mounted) setAuthLoading(false);
+        console.error("La verificación de sesión tardó demasiado o falló:", error);
+        setAuthError("La app no pudo verificar la sesión. Refresca la página o intenta borrar la sesión del navegador.");
+        setSession(null);
+        setUserProfile(null);
+        setRole(null);
+        setAuthLoading(false);
         return;
       }
 
@@ -3492,22 +3635,18 @@ export default function NeoVecinoMVP() {
       if (!mounted) return;
 
       if (error) {
-        console.warn("Error obteniendo sesión. No se cerrará sesión automáticamente:", error);
-        setAuthError("No se pudo verificar la sesión. Intentando conservar el acceso actual.");
+        console.error("Error obteniendo sesión:", error);
+        setAuthError("No se pudo verificar la sesión.");
         setAuthLoading(false);
         return;
       }
 
       const currentSession = data.session || null;
-
-      if (currentSession) {
-        setSession(currentSession);
-      }
+      setSession(currentSession);
 
       if (currentSession?.user) {
         await loadUserProfile(currentSession.user);
-      } else if (!userProfile && !role) {
-        setSession(null);
+      } else {
         setUserProfile(null);
         setRole(null);
       }
@@ -3517,22 +3656,17 @@ export default function NeoVecinoMVP() {
 
     initAuth();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
-      if (nextSession) {
-        setSession(nextSession);
-      }
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      setSession(nextSession || null);
 
       try {
         if (nextSession?.user) {
           await loadUserProfile(nextSession.user);
-        } else if (event === "SIGNED_OUT") {
-          setSession(null);
+        } else {
           setUserProfile(null);
           setRole(null);
           setActive("home");
           setSelectedBuilding("canarias");
-        } else {
-          console.warn("Auth event sin sesión; se conserva el perfil actual.", event);
         }
       } finally {
         if (mounted) setAuthLoading(false);
@@ -3544,7 +3678,6 @@ export default function NeoVecinoMVP() {
       listener?.subscription?.unsubscribe?.();
     };
   }, []);
-
 
   useEffect(() => {
     async function loadCoreData() {
@@ -3621,19 +3754,8 @@ export default function NeoVecinoMVP() {
           .order("created_at", { ascending: false });
 
         if (!announcementsResult.error) {
-          const dbAnnouncements = (announcementsResult.data || []).map((a) => ({
-            id: a.id,
-            buildingId: a.building_id,
-            target: a.target,
-            apt: a.apt || "",
-            title: a.title,
-            message: a.message,
-            priority: a.priority || "Normal",
-            status: a.status || "Enviado",
-            createdAt: a.created_at,
-          }));
-
-          if (dbAnnouncements.length) setAllAnnouncements(dbAnnouncements);
+          const dbAnnouncements = (announcementsResult.data || []).map(announcementFromDb);
+          setAllAnnouncements(dbAnnouncements);
         } else {
           console.warn("No se pudieron cargar anuncios desde Supabase:", announcementsResult.error);
         }
@@ -3660,6 +3782,28 @@ export default function NeoVecinoMVP() {
         } else {
           console.warn("No se pudieron cargar visit_logs desde Supabase:", visitLogsResult.error);
         }
+
+        const reservationsResult = await supabase
+          .from("reservations")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (!reservationsResult.error) {
+          setAllReservations((reservationsResult.data || []).map(reservationFromDb));
+        } else {
+          console.warn("No se pudieron cargar reservas desde Supabase:", reservationsResult.error);
+        }
+
+        const ticketsResult = await supabase
+          .from("tickets")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (!ticketsResult.error) {
+          setAllTickets((ticketsResult.data || []).map(ticketFromDb));
+        } else {
+          console.warn("No se pudieron cargar tickets desde Supabase:", ticketsResult.error);
+        }
       } catch (error) {
         console.error("Error cargando datos desde Supabase:", error);
         setDataError("No se pudieron cargar los datos desde Supabase. La app está usando datos demo.");
@@ -3669,6 +3813,49 @@ export default function NeoVecinoMVP() {
     }
 
     loadCoreData();
+
+    const channel = supabase
+      .channel("neovecino-realtime-core")
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, payload => {
+        if (payload.eventType === "DELETE") {
+          setAllAnnouncements(prev => removeById(prev, payload.old?.id));
+        } else if (payload.new) {
+          setAllAnnouncements(prev => upsertById(prev, announcementFromDb(payload.new)));
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "reservations" }, payload => {
+        if (payload.eventType === "DELETE") {
+          setAllReservations(prev => removeById(prev, payload.old?.id));
+        } else if (payload.new) {
+          setAllReservations(prev => upsertById(prev, reservationFromDb(payload.new)));
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tickets" }, payload => {
+        if (payload.eventType === "DELETE") {
+          setAllTickets(prev => removeById(prev, payload.old?.id));
+        } else if (payload.new) {
+          setAllTickets(prev => upsertById(prev, ticketFromDb(payload.new)));
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, payload => {
+        if (payload.eventType === "DELETE") {
+          setAllVisits(prev => removeById(prev, payload.old?.id));
+        } else if (payload.new) {
+          setAllVisits(prev => upsertById(prev, visitFromDb(payload.new)));
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_logs" }, payload => {
+        if (payload.eventType === "DELETE") {
+          setVisitLogs(prev => removeById(prev, payload.old?.id));
+        } else if (payload.new) {
+          setVisitLogs(prev => upsertById(prev, visitLogFromDb(payload.new)));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const building = buildings.find(b => b.id === selectedBuilding) || buildings[0];
@@ -3733,8 +3920,8 @@ export default function NeoVecinoMVP() {
     users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
     visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
-    reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} />,
-    tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} />,
+    reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
+    tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
   };
 
