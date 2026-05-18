@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_GUARD_MENU_V7_LOGIN_FINAL";
+const APP_VERSION = "NEOVECINO_RESET_PASSWORD_V8";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -3132,6 +3132,59 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     setMsg("Perfil eliminado de app_users. Si querés eliminar el acceso totalmente, también elimina el usuario en Authentication.");
   }
 
+  async function resetPasswordForUser(u) {
+    if (!u?.id && !u?.email) {
+      setMsg("No se puede restablecer la contraseña porque falta el UID o el correo del usuario.");
+      return;
+    }
+
+    const tempPassword = window.prompt(
+      `Nueva contraseña temporal para ${u.email || u.fullName}.\n\nDebe tener al menos 6 caracteres.`
+    );
+
+    if (tempPassword === null) return;
+
+    const cleanPassword = String(tempPassword || "").trim();
+
+    if (cleanPassword.length < 6) {
+      setMsg("La contraseña temporal debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `Se restablecerá la contraseña de ${u.email}.\n\nEl usuario deberá ingresar con esta contraseña temporal y luego cambiarla desde el botón Contraseña.\n\n¿Deseas continuar?`
+    );
+
+    if (!ok) return;
+
+    setSaving(true);
+    setMsg("");
+
+    const { data, error } = await supabase.functions.invoke("reset-app-user-password", {
+      body: {
+        user_id: u.id,
+        email: u.email,
+        password: cleanPassword,
+      },
+    });
+
+    setSaving(false);
+
+    if (error) {
+      console.error(error);
+      setMsg(`No se pudo restablecer la contraseña. Detalle: ${error.message || "Error al llamar la función reset-app-user-password."}`);
+      return;
+    }
+
+    if (!data?.ok) {
+      console.error(data);
+      setMsg(`No se pudo restablecer la contraseña. Detalle: ${data?.error || "Respuesta inválida de la función."}${data?.detail ? ` ${data.detail}` : ""}`);
+      return;
+    }
+
+    setMsg(`Contraseña temporal restablecida para ${u.email}. Compartila con el usuario y pedile que la cambie al ingresar.`);
+  }
+
   function roleLabel(role) {
     if (role === "admin") return "Administrador";
     if (role === "owner") return "Propietario";
@@ -3169,6 +3222,8 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
 
         <div className="mb-4 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-800">
           <b>Nuevo:</b> ya no necesitas copiar el UID. Al crear el usuario aquí, la app crea automáticamente el acceso en <b>Supabase Authentication</b> y el perfil en <b>app_users</b>.
+          <br />
+          <b>Contraseña:</b> si un usuario la olvida, usa el botón <b>Restablecer contraseña</b> en su tarjeta y comparte la contraseña temporal. El usuario podrá cambiarla al ingresar.
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
@@ -3319,6 +3374,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(u)}>Editar</Btn>
+                  <Btn variant="outline" className="px-3 py-1.5" onClick={() => resetPasswordForUser(u)}>Restablecer contraseña</Btn>
                   {u.status === "Activo" && <Btn variant="outline" className="px-3 py-1.5" onClick={() => deactivate(u)}>Desactivar</Btn>}
                   <Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(u)}>Eliminar perfil</Btn>
                 </div>
