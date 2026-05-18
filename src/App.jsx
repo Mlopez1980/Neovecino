@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "QR_REAL_SCANNER_GUARDIA_ADMIN_AUDIT_V2";
+const APP_VERSION = "QR_REAL_SCANNER_GUARDIA_LOOKUP_FIX_V3";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -727,6 +727,32 @@ function QRScanner({ onScan }) {
     </div>
   );
 }
+
+function extractVisitCode(rawValue) {
+  const raw = String(rawValue || "").trim();
+
+  if (!raw) return "";
+
+  // Si en el futuro el QR contiene una URL, extraemos un UUID de cualquier parte del texto.
+  const uuidMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  if (uuidMatch) return uuidMatch[0];
+
+  // Si el QR contiene algo como neovecino:visit:CODIGO, tomamos lo último.
+  if (raw.includes(":")) {
+    const last = raw.split(":").pop()?.trim();
+    if (last) return last;
+  }
+
+  // Si el QR contiene una URL simple, tomamos el último segmento.
+  try {
+    const url = new URL(raw);
+    const lastSegment = url.pathname.split("/").filter(Boolean).pop();
+    return lastSegment || raw;
+  } catch {
+    return raw;
+  }
+}
+
 const emptyVisit = () => ({
   visitor: "",
   type: "Familiar",
@@ -1342,11 +1368,53 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
   const [saving, setSaving] = useState(false);
 
   const orderedVisits = [...visits].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  const visit = visits.find(v => String(v.id).toLowerCase() === String(code).trim().toLowerCase()) || null;
+  const normalizedCode = extractVisitCode(code);
+  const visit = visits.find(v => String(v.id).toLowerCase() === String(normalizedCode).toLowerCase()) || null;
 
   useEffect(() => {
     if (!code && orderedVisits[0]?.id) setCode(orderedVisits[0].id);
   }, [orderedVisits, code]);
+
+  async function lookupCode(rawCode) {
+    const cleanCode = extractVisitCode(rawCode);
+    setMessage("");
+
+    if (!cleanCode) {
+      setMessage("Ingresa o escanea un código QR válido.");
+      return null;
+    }
+
+    setCode(cleanCode);
+
+    const existing = visits.find(v => String(v.id).toLowerCase() === String(cleanCode).toLowerCase());
+
+    if (existing) {
+      setMessage("Código encontrado en las visitas cargadas.");
+      return existing;
+    }
+
+    const { data, error } = await supabase
+      .from("visits")
+      .select("*")
+      .eq("id", cleanCode)
+      .maybeSingle();
+
+    if (error) {
+      console.error("No se pudo buscar la visita en Supabase:", error);
+      setMessage(`No se pudo buscar el código en Supabase. Detalle: ${error.message}`);
+      return null;
+    }
+
+    if (!data) {
+      setMessage("Código no encontrado en Supabase. Verifica que el QR corresponda a una visita creada y guardada.");
+      return null;
+    }
+
+    const foundVisit = visitFromDb(data);
+    setVisits([foundVisit, ...visits.filter(v => String(v.id) !== String(foundVisit.id))]);
+    setMessage("Visita encontrada en Supabase y cargada correctamente.");
+    return foundVisit;
+  }
 
   async function updateVisit(patch) {
     if (!visit) return null;
@@ -1454,13 +1522,12 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
               }}
               placeholder="Pega o escanea el código QR"
             />
-            <Btn>Validar</Btn>
+            <Btn onClick={() => lookupCode(code)}>Validar</Btn>
           </div>
 
           <QRScanner
             onScan={(decodedCode) => {
-              setCode(decodedCode);
-              setMessage("Código QR escaneado correctamente. Revisa la información y presiona Entrada si corresponde.");
+              lookupCode(decodedCode);
             }}
           />
 
@@ -1493,7 +1560,7 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
         <Card>
           {!visit ? (
             <div className="rounded-2xl bg-rose-50 p-4 text-rose-700">
-              Código no encontrado. Selecciona una visita de la lista o pega el código QR generado.
+              Código no encontrado en las visitas cargadas. Presiona Validar para buscarlo directamente en Supabase, o escanea el QR nuevamente.
             </div>
           ) : (
             <div className="space-y-3">
