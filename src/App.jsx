@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "VISITAS_SUPABASE_FINAL_SIN_DEMO_VISIT_LOGS_FIX";
+const APP_VERSION = "QR_REAL_SCANNER_GUARDIA_V1";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -624,10 +626,106 @@ function Payments({ role, payments, apartments, aptNumber = "" }) {
 }
 
 function QR({ value }) {
-  const seed = Array.from(value).reduce((a, c) => a + c.charCodeAt(0), 0);
-  const cells = [];
-  for (let y = 0; y < 19; y++) for (let x = 0; x < 19; x++) if ((x * 17 + y * 31 + seed) % 5 === 0 || (x < 5 && y < 5) || (x > 13 && y < 5) || (x < 5 && y > 13)) cells.push(<rect key={`${x}-${y}`} x={x * 10} y={y * 10} width="9" height="9" rx="2" fill="currentColor" />);
-  return <svg width="190" height="190" viewBox="0 0 190 190" className="text-slate-900"><rect width="190" height="190" rx="16" fill="white" />{cells}</svg>;
+  const qrValue = String(value || "").trim();
+
+  if (!qrValue) {
+    return (
+      <div className="flex h-[190px] w-[190px] items-center justify-center rounded-2xl bg-white text-center text-xs font-bold text-slate-400">
+        QR no disponible
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-flex rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+      <QRCodeSVG
+        value={qrValue}
+        size={170}
+        level="M"
+        includeMargin={false}
+        bgColor="#ffffff"
+        fgColor="#020202"
+      />
+    </div>
+  );
+}
+
+function QRScanner({ onScan }) {
+  const [active, setActive] = useState(false);
+  const [scannerId] = useState(() => `qr-reader-${Math.random().toString(36).slice(2)}`);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (!active) return undefined;
+
+    let scanner;
+    let cleared = false;
+
+    try {
+      scanner = new Html5QrcodeScanner(
+        scannerId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: true,
+        },
+        false
+      );
+
+      scanner.render(
+        (decodedText) => {
+          const value = String(decodedText || "").trim();
+          if (!value) return;
+
+          onScan(value);
+          setErrorMsg("");
+          setActive(false);
+        },
+        () => {}
+      );
+    } catch (error) {
+      console.error("Error iniciando escáner QR:", error);
+      setErrorMsg(error?.message || "No se pudo iniciar la cámara.");
+      setActive(false);
+    }
+
+    return () => {
+      if (scanner && !cleared) {
+        cleared = true;
+        scanner.clear().catch(() => {});
+      }
+    };
+  }, [active, scannerId, onScan]);
+
+  return (
+    <div className="mt-5 rounded-3xl border-2 border-dashed bg-slate-50 p-4 text-center">
+      <div className="text-5xl">▦</div>
+      <b>Escáner de código QR</b>
+      <p className="mt-1 text-xs font-bold text-slate-500">
+        En celular, permite el acceso a la cámara y apunta al QR generado por el residente.
+      </p>
+
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        {!active ? (
+          <Btn onClick={() => { setErrorMsg(""); setActive(true); }}>📷 Escanear QR</Btn>
+        ) : (
+          <Btn variant="secondary" onClick={() => setActive(false)}>Detener cámara</Btn>
+        )}
+      </div>
+
+      {errorMsg && (
+        <div className="mt-3 rounded-2xl bg-rose-50 p-3 text-sm font-bold text-rose-700">
+          {errorMsg}
+        </div>
+      )}
+
+      {active && (
+        <div className="mt-4 overflow-hidden rounded-2xl bg-white p-2 text-left shadow-sm ring-1 ring-slate-200">
+          <div id={scannerId} />
+        </div>
+      )}
+    </div>
+  );
 }
 const emptyVisit = () => ({
   visitor: "",
@@ -1323,10 +1421,12 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
             <Btn>Validar</Btn>
           </div>
 
-          <div className="mt-5 rounded-3xl border-2 border-dashed bg-slate-50 p-8 text-center">
-            <div className="text-6xl">▦</div>
-            <b>Aquí irá el escáner de cámara</b>
-          </div>
+          <QRScanner
+            onScan={(decodedCode) => {
+              setCode(decodedCode);
+              setMessage("Código QR escaneado correctamente. Revisa la información y presiona Entrada si corresponde.");
+            }}
+          />
 
           <div className="mt-4 rounded-2xl bg-slate-50 p-3">
             <b className="text-sm">Últimas visitas autorizadas</b>
