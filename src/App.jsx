@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "QR_REAL_SCANNER_GUARDIA_V1";
+const APP_VERSION = "QR_REAL_SCANNER_GUARDIA_ADMIN_AUDIT_V2";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -1241,8 +1241,27 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
           <div className="grid gap-2">
             {latestLogs.map(log => (
               <div key={log.id} className="rounded-2xl bg-slate-50 p-3 text-sm">
-                <b>{log.action === "entry" ? "Entrada" : "Salida"}</b> · {log.visitor} · Apto {log.apt}
-                <div className="text-xs font-bold text-slate-400">{fmtDateTime(log.eventAt)} · Guardia: {log.guardName || "-"}</div>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <b>{log.action === "entry" ? "Entrada" : "Salida"}</b> · {log.visitor} · Apto {log.apt}
+                    <div className="mt-1 text-xs font-bold text-slate-400">
+                      {fmtDateTime(log.eventAt)} · Uso #{log.useNumber || "-"} · Guardia: {log.guardName || "-"}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {log.plate ? <><b>Placa:</b> {log.plate}</> : <><b>Placa:</b> -</>}
+                      {" · "}
+                      <b>Personas:</b> {log.peopleCount || 1}
+                    </div>
+                  </div>
+                  {log.platePhoto ? (
+                    <a href={log.platePhoto} target="_blank" rel="noreferrer" className="block">
+                      <img src={log.platePhoto} alt="Foto de placa" className="h-24 w-full rounded-xl border object-cover md:w-36" />
+                      <div className="mt-1 text-center text-xs font-black text-slate-500">Ver foto de placa</div>
+                    </a>
+                  ) : (
+                    <div className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-400">Sin foto de placa</div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -1261,6 +1280,8 @@ function VisitCard({ v, role, update }) {
     }
     await update(v.id, buildEntryPatch(v));
   }
+
+  const showAuditDetails = role === "admin" || role === "guard";
 
   return (
     <div className="rounded-2xl border bg-slate-50 p-4">
@@ -1287,6 +1308,21 @@ function VisitCard({ v, role, update }) {
         <div><b>Personas autorizadas:</b> {getVisitPeopleCount(v)}</div>
         {v.lastUse && <div><b>Último uso:</b> {v.lastUse}</div>}
       </div>
+
+      {showAuditDetails && (
+        <div className="mt-3 rounded-xl bg-white p-3 text-xs">
+          <div className="font-black text-slate-700">Control de acceso</div>
+          <div><b>Hora de entrada:</b> {v.entryTime || "-"}</div>
+          <div><b>Hora de salida:</b> {v.exitTime || "-"}</div>
+          <div><b>Foto de placa:</b> {v.platePhoto ? "registrada" : "-"}</div>
+          {v.platePhoto && (
+            <a href={v.platePhoto} target="_blank" rel="noreferrer" className="mt-2 block">
+              <img src={v.platePhoto} alt="Foto de placa" className="h-28 w-full rounded-xl border object-cover" />
+              <div className="mt-1 text-center text-xs font-black text-slate-500">Abrir foto de placa</div>
+            </a>
+          )}
+        </div>
+      )}
 
       <div className="mt-2 break-all rounded-xl bg-white px-3 py-2 font-mono text-xs">{v.id}</div>
 
@@ -1527,9 +1563,24 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
         <div className="grid gap-2">
           {latestLogs.map(log => (
             <div key={log.id} className="rounded-2xl bg-slate-50 p-3 text-sm">
-              <b>{log.action === "entry" ? "Entrada" : "Salida"}</b> · {log.visitor} · Apto {log.apt}
-              <div className="text-xs font-bold text-slate-400">
-                {fmtDateTime(log.eventAt)} · Uso #{log.useNumber || "-"} · Guardia: {log.guardName || "-"}
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <b>{log.action === "entry" ? "Entrada" : "Salida"}</b> · {log.visitor} · Apto {log.apt}
+                  <div className="text-xs font-bold text-slate-400">
+                    {fmtDateTime(log.eventAt)} · Uso #{log.useNumber || "-"} · Guardia: {log.guardName || "-"}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600">
+                    <b>Placa:</b> {log.plate || "-"} · <b>Personas:</b> {log.peopleCount || 1}
+                  </div>
+                </div>
+                {log.platePhoto ? (
+                  <a href={log.platePhoto} target="_blank" rel="noreferrer" className="block">
+                    <img src={log.platePhoto} alt="Foto de placa" className="h-20 w-full rounded-xl border object-cover md:w-32" />
+                    <div className="mt-1 text-center text-xs font-black text-slate-500">Ver foto</div>
+                  </a>
+                ) : (
+                  <div className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-400">Sin foto</div>
+                )}
               </div>
             </div>
           ))}
