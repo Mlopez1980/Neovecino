@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_MASTER_SYNC_V6";
+const APP_VERSION = "NEOVECINO_GUARD_MENU_V7";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -481,8 +481,8 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
     ["docs", "Docs", "📄"],
   ],
   guard: [
-    ["home", "Guardia", "🛡️"],
-    ["visits", "Visitas", "📋"],
+    ["home", "Control de acceso", "🛡️"],
+    ["visits", "Visitas autorizadas", "📋"],
   ],
 };
 
@@ -1654,6 +1654,170 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
             </div>
           )}
         </div>
+      </Card>
+    </div>
+  );
+}
+
+
+function GuardAuthorizedVisits({ visits = [], visitLogs = [], selectedBuilding = "canarias" }) {
+  const [filter, setFilter] = useState("hoy");
+  const [search, setSearch] = useState("");
+  const today = todayISO();
+
+  const normalizedSearch = String(search || "").trim().toLowerCase();
+
+  const filteredVisits = [...visits]
+    .filter(v => String(v.buildingId || "canarias") === String(selectedBuilding || "canarias"))
+    .filter(v => {
+      const from = getVisitValidFrom(v);
+      const to = getVisitValidTo(v);
+
+      if (filter === "hoy") return today >= from && today <= to;
+      if (filter === "futuras") return from > today;
+      if (filter === "vencidas") return to < today;
+      if (filter === "activas") return today >= from && today <= to && getRemainingUses(v) > 0 && v.status !== "Ingresó";
+      if (filter === "dentro") return v.status === "Ingresó";
+      return true;
+    })
+    .filter(v => {
+      if (!normalizedSearch) return true;
+      return [v.visitor, v.apt, v.plate, v.status, v.id]
+        .some(value => String(value || "").toLowerCase().includes(normalizedSearch));
+    })
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+  function visitTone(v) {
+    if (v.status === "Ingresó") return "blue";
+    if (v.status === "Salió") return "default";
+    if (getRemainingUses(v) <= 0) return "bad";
+    if (!isTodayWithinVisitDates(v)) return getVisitValidTo(v) < today ? "bad" : "warn";
+    return "good";
+  }
+
+  function visitLabel(v) {
+    if (v.status === "Ingresó") return "Dentro";
+    if (v.status === "Salió") return "Salió";
+    if (getRemainingUses(v) <= 0) return "Sin usos";
+    if (getVisitValidTo(v) < today) return "Vencida";
+    if (getVisitValidFrom(v) > today) return "Futura";
+    return "Autorizada hoy";
+  }
+
+  const todayVisits = visits.filter(v => today >= getVisitValidFrom(v) && today <= getVisitValidTo(v));
+  const insideVisits = visits.filter(v => v.status === "Ingresó");
+  const futureVisits = visits.filter(v => getVisitValidFrom(v) > today);
+
+  return (
+    <div className="space-y-4 pb-24 lg:pb-0">
+      <Title icon="📋" title="Visitas autorizadas" sub="Consulta de visitas programadas, vigentes y futuras" />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <p className="text-sm text-slate-500">Vigentes hoy</p>
+          <h3 className="text-3xl font-black">{todayVisits.length}</h3>
+        </Card>
+        <Card>
+          <p className="text-sm text-slate-500">Dentro del edificio</p>
+          <h3 className="text-3xl font-black">{insideVisits.length}</h3>
+        </Card>
+        <Card>
+          <p className="text-sm text-slate-500">Futuras</p>
+          <h3 className="text-3xl font-black">{futureVisits.length}</h3>
+        </Card>
+      </div>
+
+      <Card>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="font-bold">Listado para consulta</h3>
+            <p className="text-sm font-medium text-slate-500">Esta sección es solo para revisar autorizaciones. Para registrar entrada o salida usa Control de acceso.</p>
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row">
+            <select
+              className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold"
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+            >
+              <option value="hoy">Vigentes hoy</option>
+              <option value="activas">Autorizadas disponibles</option>
+              <option value="dentro">Dentro del edificio</option>
+              <option value="futuras">Futuras</option>
+              <option value="vencidas">Vencidas</option>
+              <option value="todas">Todas</option>
+            </select>
+            <input
+              className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              placeholder="Buscar visitante, apto, placa o código"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filteredVisits.map(v => {
+            const logsForVisit = visitLogs.filter(log => String(log.visitId) === String(v.id)).slice(0, 3);
+
+            return (
+              <div key={v.id} className="rounded-2xl border bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <b className="text-lg">{v.visitor}</b>
+                    <div className="text-sm font-bold text-slate-500">Apto {v.apt}</div>
+                  </div>
+                  <Badge tone={visitTone(v)}>{visitLabel(v)}</Badge>
+                </div>
+
+                <div className="mt-3 rounded-xl bg-white p-3 text-xs text-slate-700">
+                  <div><b>Vigencia:</b> {fmtDate(getVisitValidFrom(v))} al {fmtDate(getVisitValidTo(v))}</div>
+                  <div><b>Horario:</b> {v.time || "-"}</div>
+                  <div><b>QR:</b> {getVisitQrType(v)}</div>
+                  <div><b>Usos:</b> {getVisitUses(v)} de {getVisitMaxUses(v)} · <b>Disponibles:</b> {getRemainingUses(v)}</div>
+                  <div><b>Personas:</b> {getVisitPeopleCount(v)}</div>
+                  <div><b>Placa:</b> {v.plate || "-"}</div>
+                  <div><b>Estado:</b> {v.status || "Pendiente"}</div>
+                  {v.entryTime && <div><b>Entrada:</b> {v.entryTime}</div>}
+                  {v.exitTime && <div><b>Salida:</b> {v.exitTime}</div>}
+                </div>
+
+                {v.notes && (
+                  <div className="mt-3 rounded-xl border-l-4 bg-white px-3 py-2 text-sm" style={{ borderColor: BRAND.red }}>
+                    <b>Observación:</b><br />{v.notes}
+                  </div>
+                )}
+
+                {v.platePhoto && (
+                  <a href={v.platePhoto} target="_blank" rel="noreferrer" className="mt-3 block">
+                    <img src={v.platePhoto} alt="Foto de placa" className="h-24 w-full rounded-xl border object-cover" />
+                    <div className="mt-1 text-center text-xs font-black text-slate-500">Abrir foto de placa</div>
+                  </a>
+                )}
+
+                <div className="mt-3 break-all rounded-xl bg-white px-3 py-2 font-mono text-[11px] text-slate-500">{v.id}</div>
+
+                {logsForVisit.length > 0 && (
+                  <div className="mt-3 rounded-xl bg-white p-3 text-xs">
+                    <b>Últimos movimientos</b>
+                    <div className="mt-2 space-y-1">
+                      {logsForVisit.map(log => (
+                        <div key={log.id} className="text-slate-600">
+                          {log.action === "entry" ? "Entrada" : "Salida"} · {fmtDateTime(log.eventAt)} · {log.guardName || "Guardia"}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {!filteredVisits.length && (
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+            No hay visitas que coincidan con este filtro.
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -4001,13 +4165,15 @@ export default function NeoVecinoMVP() {
 
   const pages = {
     home: role === "guard"
-      ? <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />
+      ? <GuardPanel visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />
       : <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
     apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
     residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
     users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
-    visits: <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
+    visits: role === "guard"
+      ? <GuardAuthorizedVisits visits={scopedVisits} visitLogs={scopedVisitLogs} selectedBuilding={selectedBuilding} />
+      : <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
     tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
