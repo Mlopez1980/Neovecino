@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_GUARD_MENU_V7_LOGIN_CLEAN";
+const APP_VERSION = "NEOVECINO_GUARD_MENU_V7_LOGIN_FINAL";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -324,9 +324,6 @@ function Login({ onLogin }) {
             {loading ? "Verificando..." : "Entrar"}
           </button>
 
-          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold text-slate-500">
-            Si el usuario existe en Authentication pero no tiene perfil en app_users, la app no permitirá el acceso.
-          </div>
         </form>
       </div>
     </div>
