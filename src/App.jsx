@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_GUARD_MENU_V7";
+const APP_VERSION = "NEOVECINO_GUARD_MENU_V7_LOGIN_CLEAN";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -274,9 +274,6 @@ function Login({ onLogin }) {
           <p className="mt-5 max-w-2xl text-lg font-medium text-slate-200">
             Plataforma para gestión de edificios residenciales con control de visitas, reservas, tickets, documentos y anuncios.
           </p>
-          <div className="mt-8 max-w-xl rounded-[28px] border border-white/10 bg-white/10 p-5 text-sm text-slate-200 backdrop-blur">
-            <b className="text-white">Inicio de sesión real:</b> cada usuario entra con su correo y contraseña, y la app abre automáticamente su perfil según el rol asignado en Supabase.
-          </div>
         </div>
 
         <form onSubmit={submit} className="rounded-[34px] border border-white/10 bg-white/95 p-6 text-slate-950 shadow-2xl">
