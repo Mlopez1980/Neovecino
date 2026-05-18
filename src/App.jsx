@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "REALTIME_TICKETS_RESERVAS_ANUNCIOS_V5";
+const APP_VERSION = "NEOVECINO_MASTER_SYNC_V6";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -727,6 +727,29 @@ function QRScanner({ onScan }) {
     </div>
   );
 }
+
+function extractVisitCode(rawValue) {
+  const raw = String(rawValue || "").trim();
+
+  if (!raw) return "";
+
+  const uuidMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  if (uuidMatch) return uuidMatch[0];
+
+  if (raw.includes(":")) {
+    const last = raw.split(":").pop()?.trim();
+    if (last) return last;
+  }
+
+  try {
+    const url = new URL(raw);
+    const lastSegment = url.pathname.split("/").filter(Boolean).pop();
+    return lastSegment || raw;
+  } catch {
+    return raw;
+  }
+}
+
 const emptyVisit = () => ({
   visitor: "",
   type: "Familiar",
@@ -1342,11 +1365,53 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
   const [saving, setSaving] = useState(false);
 
   const orderedVisits = [...visits].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  const visit = visits.find(v => String(v.id).toLowerCase() === String(code).trim().toLowerCase()) || null;
+  const normalizedCode = extractVisitCode(code);
+  const visit = visits.find(v => String(v.id).toLowerCase() === String(normalizedCode).toLowerCase()) || null;
 
   useEffect(() => {
     if (!code && orderedVisits[0]?.id) setCode(orderedVisits[0].id);
   }, [orderedVisits, code]);
+
+  async function lookupCode(rawCode) {
+    const cleanCode = extractVisitCode(rawCode);
+    setMessage("");
+
+    if (!cleanCode) {
+      setMessage("Ingresa o escanea un código QR válido.");
+      return null;
+    }
+
+    setCode(cleanCode);
+
+    const existing = visits.find(v => String(v.id).toLowerCase() === String(cleanCode).toLowerCase());
+
+    if (existing) {
+      setMessage("Código encontrado en las visitas cargadas.");
+      return existing;
+    }
+
+    const { data, error } = await supabase
+      .from("visits")
+      .select("*")
+      .eq("id", cleanCode)
+      .maybeSingle();
+
+    if (error) {
+      console.error("No se pudo buscar la visita en Supabase:", error);
+      setMessage(`No se pudo buscar el código en Supabase. Detalle: ${error.message}`);
+      return null;
+    }
+
+    if (!data) {
+      setMessage("Código no encontrado en Supabase. Verifica que el QR corresponda a una visita creada y guardada.");
+      return null;
+    }
+
+    const foundVisit = visitFromDb(data);
+    setVisits([foundVisit, ...visits.filter(v => String(v.id) !== String(foundVisit.id))]);
+    setMessage("Visita encontrada en Supabase y cargada correctamente.");
+    return foundVisit;
+  }
 
   async function updateVisit(patch) {
     if (!visit) return null;
@@ -1454,13 +1519,12 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
               }}
               placeholder="Pega o escanea el código QR"
             />
-            <Btn>Validar</Btn>
+            <Btn onClick={() => lookupCode(code)}>Validar</Btn>
           </div>
 
           <QRScanner
             onScan={(decodedCode) => {
-              setCode(decodedCode);
-              setMessage("Código QR escaneado correctamente. Revisa la información y presiona Entrada si corresponde.");
+              lookupCode(decodedCode);
             }}
           />
 
@@ -1493,7 +1557,7 @@ function GuardPanel({ visits, setVisits, visitLogs = [], setVisitLogs, userProfi
         <Card>
           {!visit ? (
             <div className="rounded-2xl bg-rose-50 p-4 text-rose-700">
-              Código no encontrado. Selecciona una visita de la lista o pega el código QR generado.
+              Código no encontrado en las visitas cargadas. Presiona Validar para buscarlo directamente en Supabase, o escanea el QR nuevamente.
             </div>
           ) : (
             <div className="space-y-3">
@@ -3542,7 +3606,7 @@ export default function NeoVecinoMVP() {
   }
 
   async function loadUserProfile(user) {
-    if (!user) return null;
+    if (!user) return userProfile || null;
 
     setAuthError("");
 
@@ -3555,24 +3619,34 @@ export default function NeoVecinoMVP() {
           .select("*")
           .eq("id", user.id)
           .maybeSingle(),
-        10000,
+        20000,
         "el perfil app_users"
       );
     } catch (error) {
-      console.error("La consulta del perfil app_users tardó demasiado o falló:", error);
-      setUserProfile(null);
-      setRole(null);
-      setAuthError("La app no pudo cargar el perfil del usuario desde Supabase. Revisa la conexión, las políticas RLS de app_users o intenta cerrar sesión y volver a entrar.");
+      console.warn("La consulta del perfil app_users tardó demasiado o falló. Se conservará la sesión actual:", error);
+
+      if (userProfile && role) {
+        setAuthError("Reconectando sesión... La app conservará tu acceso mientras vuelve a cargar el perfil.");
+        return userProfile;
+      }
+
+      setAuthError("La app no pudo cargar el perfil del usuario desde Supabase. Revisa la conexión e intenta refrescar la página.");
       return null;
     }
 
     const { data, error } = profileResult;
 
     if (error || !data) {
-      console.error("No se pudo cargar el perfil app_users:", error);
+      console.warn("No se pudo cargar el perfil app_users. Se conservará la sesión actual si ya existe:", error);
+
+      if (userProfile && role) {
+        setAuthError("Reconectando perfil... La sesión sigue activa.");
+        return userProfile;
+      }
+
       setUserProfile(null);
       setRole(null);
-      setAuthError("Tu usuario existe en Supabase Auth, pero aún no tiene perfil en app_users. Revisa que el UID esté creado en la tabla app_users.");
+      setAuthError("Tu usuario existe en Supabase Auth, pero aún no tiene perfil activo en app_users.");
       return null;
     }
 
@@ -3586,8 +3660,9 @@ export default function NeoVecinoMVP() {
     const nextProfile = normalizeProfile(data, user);
     setUserProfile(nextProfile);
     setRole(nextProfile.role);
-    setActive("home");
+    setActive(prev => prev || "home");
     setSelectedBuilding(nextProfile.buildingId || "canarias");
+    setAuthError("");
     return nextProfile;
   }
 
@@ -3619,14 +3694,17 @@ export default function NeoVecinoMVP() {
       let sessionResult;
 
       try {
-        sessionResult = await withTimeout(supabase.auth.getSession(), 10000, "la sesión de Supabase");
+        sessionResult = await withTimeout(supabase.auth.getSession(), 20000, "la sesión de Supabase");
       } catch (error) {
-        console.error("La verificación de sesión tardó demasiado o falló:", error);
-        setAuthError("La app no pudo verificar la sesión. Refresca la página o intenta borrar la sesión del navegador.");
-        setSession(null);
-        setUserProfile(null);
-        setRole(null);
-        setAuthLoading(false);
+        console.warn("La verificación de sesión tardó demasiado o falló. No se cerrará la sesión automáticamente:", error);
+
+        if (!session && !role) {
+          setAuthError("No se pudo verificar la sesión. Refresca la página e intenta de nuevo.");
+        } else {
+          setAuthError("Reconectando sesión... Conservando acceso actual.");
+        }
+
+        if (mounted) setAuthLoading(false);
         return;
       }
 
@@ -3635,18 +3713,22 @@ export default function NeoVecinoMVP() {
       if (!mounted) return;
 
       if (error) {
-        console.error("Error obteniendo sesión:", error);
-        setAuthError("No se pudo verificar la sesión.");
+        console.warn("Error obteniendo sesión. No se cerrará sesión automáticamente:", error);
+        setAuthError("No se pudo verificar la sesión. Intentando conservar el acceso actual.");
         setAuthLoading(false);
         return;
       }
 
       const currentSession = data.session || null;
-      setSession(currentSession);
+
+      if (currentSession) {
+        setSession(currentSession);
+      }
 
       if (currentSession?.user) {
         await loadUserProfile(currentSession.user);
-      } else {
+      } else if (!userProfile && !role) {
+        setSession(null);
         setUserProfile(null);
         setRole(null);
       }
@@ -3656,17 +3738,22 @@ export default function NeoVecinoMVP() {
 
     initAuth();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      setSession(nextSession || null);
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      if (nextSession) {
+        setSession(nextSession);
+      }
 
       try {
         if (nextSession?.user) {
           await loadUserProfile(nextSession.user);
-        } else {
+        } else if (event === "SIGNED_OUT") {
+          setSession(null);
           setUserProfile(null);
           setRole(null);
           setActive("home");
           setSelectedBuilding("canarias");
+        } else {
+          console.warn("Auth event sin sesión; se conserva el perfil actual.", event);
         }
       } finally {
         if (mounted) setAuthLoading(false);
@@ -3678,6 +3765,7 @@ export default function NeoVecinoMVP() {
       listener?.subscription?.unsubscribe?.();
     };
   }, []);
+
 
   useEffect(() => {
     async function loadCoreData() {
