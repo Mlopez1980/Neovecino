@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_RESET_PASSWORD_V8";
+const APP_VERSION = "NEOVECINO_ADMIN_VISIT_RESERVATION_V9";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -420,7 +420,7 @@ function ChangePasswordModal({ open, onClose }) {
         </label>
 
         {msg && (
-          <div className={`mt-4 rounded-2xl p-3 text-sm font-bold ${msg.includes("correctamente") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+          <div className={`mt-4 rounded-2xl p-3 text-sm font-bold ${msg.includes("correctamente") || msg.includes("administración") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
             {msg}
           </div>
         )}
@@ -983,21 +983,27 @@ function buildVisitLogPayload(visit, action, useNumber, guardProfile) {
   };
 }
 
-function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "canarias", visitLogs = [], setVisitLogs, userProfile }) {
+function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "canarias", visitLogs = [], setVisitLogs, userProfile, apartments = [] }) {
   const [form, setForm] = useState(() => ({ ...emptyVisit(), apt: aptNumber || "" }));
   const [selected, setSelected] = useState("");
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
   const isResidentLike = ["resident", "owner"].includes(role);
+  const isAdmin = role === "admin";
+  const apartmentOptions = (apartments || [])
+    .filter(a => String(a.buildingId || "canarias") === String(selectedBuilding || "canarias"))
+    .sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""), undefined, { numeric: true }));
   const list = isResidentLike
     ? visits.filter(v => String(v.apt) === String(aptNumber))
     : visits;
   const selectedVisit = list.find(v => String(v.id) === String(selected)) || list[0] || null;
 
   useEffect(() => {
-    setForm(prev => ({ ...prev, apt: aptNumber || "" }));
-  }, [aptNumber]);
+    if (isResidentLike) {
+      setForm(prev => ({ ...prev, apt: aptNumber || "" }));
+    }
+  }, [aptNumber, isResidentLike]);
 
   useEffect(() => {
     if (!selected && list[0]?.id) setSelected(list[0].id);
@@ -1028,13 +1034,15 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
   async function create() {
     setMsg("");
 
+    const targetApt = isResidentLike ? String(aptNumber || "").trim() : String(form.apt || "").trim();
+
     if (!form.visitor.trim()) {
       setMsg("Ingresa el nombre del visitante o grupo.");
       return;
     }
 
-    if (!aptNumber && isResidentLike) {
-      setMsg("Tu usuario no tiene apartamento asignado. Contacta a administración.");
+    if (!targetApt) {
+      setMsg(isAdmin ? "Selecciona el apartamento para el que se autoriza la visita." : "Tu usuario no tiene apartamento asignado. Contacta a administración.");
       return;
     }
 
@@ -1045,7 +1053,19 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
 
     setSaving(true);
 
-    const payload = buildVisitInsertPayload(form, aptNumber, selectedBuilding);
+    const adminNote = isAdmin
+      ? `Creada por administración: ${userProfile?.fullName || userProfile?.email || "Administrador"}`
+      : "";
+
+    const payload = buildVisitInsertPayload(
+      {
+        ...form,
+        apt: targetApt,
+        notes: [String(form.notes || "").trim(), adminNote].filter(Boolean).join("\n"),
+      },
+      targetApt,
+      selectedBuilding
+    );
 
     const { data, error } = await supabase
       .from("visits")
@@ -1064,8 +1084,8 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
     const created = visitFromDb(data);
     setVisits([created, ...visits]);
     setSelected(created.id);
-    setForm({ ...emptyVisit(), apt: aptNumber || "" });
-    setMsg("Visita creada correctamente en Supabase. El guardia ya puede verla con el código QR.");
+    setForm({ ...emptyVisit(), apt: isResidentLike ? aptNumber || "" : targetApt });
+    setMsg(isAdmin ? "Visita creada por administración. El guardia ya puede verla con el código QR." : "Visita creada correctamente en Supabase. El guardia ya puede verla con el código QR.");
   }
 
   if (role === "guard") {
@@ -1089,16 +1109,36 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title
         icon="▦"
-        title={isResidentLike ? "Mis visitas QR" : "Control de visitas"}
-        sub="Autorización y registro de entradas"
+        title={isResidentLike ? "Mis visitas QR" : isAdmin ? "Visitas por administración" : "Control de visitas"}
+        sub={isAdmin ? "Crear autorizaciones en nombre de un apartamento" : "Autorización y registro de entradas"}
       />
 
-      {isResidentLike && (
+      {(isResidentLike || isAdmin) && (
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <Card>
-            <h3 className="mb-3 font-bold">Crear autorización</h3>
+            <h3 className="mb-3 font-bold">{isAdmin ? "Crear visita para apartamento" : "Crear autorización"}</h3>
+
+            {isAdmin && (
+              <div className="mb-4 rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
+                La visita quedará registrada como creada por administración y asociada al apartamento seleccionado.
+              </div>
+            )}
 
             <div className="grid gap-3 md:grid-cols-2">
+              {isAdmin && (
+                <Field label="Apartamento">
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                    value={form.apt || ""}
+                    onChange={e => setForm({ ...form, apt: e.target.value })}
+                  >
+                    <option value="">Seleccionar apartamento</option>
+                    {apartmentOptions.map(a => (
+                      <option key={a.id || a.number} value={a.number}>{a.number}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
               <Field label="Visitante o grupo">
                 <Text
                   value={form.visitor}
@@ -1203,7 +1243,7 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
             </div>
 
             {msg && (
-              <div className={`mt-4 rounded-2xl p-3 text-sm font-bold ${msg.includes("correctamente") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+              <div className={`mt-4 rounded-2xl p-3 text-sm font-bold ${msg.includes("correctamente") || msg.includes("administración") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                 {msg}
               </div>
             )}
@@ -2097,18 +2137,24 @@ function announcementFromDb(a) {
   };
 }
 
-function Reservations({ role, reservations, setReservations, aptNumber = "", selectedBuilding = "canarias", userProfile }) {
-  const [form, setForm] = useState({ area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
+function Reservations({ role, reservations, setReservations, aptNumber = "", selectedBuilding = "canarias", userProfile, apartments = [] }) {
+  const [form, setForm] = useState({ apt: aptNumber || "", area: "Área social techada", date: todayISO(), start: "18:00", hours: 4 });
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const isResidentLike = ["resident", "owner"].includes(role);
+  const isAdmin = role === "admin";
+  const apartmentOptions = (apartments || [])
+    .filter(a => String(a.buildingId || "canarias") === String(selectedBuilding || "canarias"))
+    .sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""), undefined, { numeric: true }));
+  const targetApt = isResidentLike ? String(aptNumber || "").trim() : String(form.apt || "").trim();
   const maxHours = getMaxReservableHours(form.area, form.date, form.start);
   const scheduleText = getScheduleText(form.area, form.date);
   const cleaning = form.area === "Coworking" ? 0 : isSunday(form.date) ? 1600 : 1000;
   const deposit = form.area === "Coworking" ? 0 : 1000;
   const safeHours = maxHours > 0 ? Math.min(Number(form.hours || 1), maxHours) : Number(form.hours || 1);
   const range = `${clock(form.start)} - ${clock(addHours(form.start, safeHours))}`;
-  const rows = ["resident", "owner"].includes(role) ? reservations.filter(r => String(r.apt) === String(aptNumber)) : reservations;
+  const rows = isResidentLike ? reservations.filter(r => String(r.apt) === String(aptNumber)) : reservations;
 
   const dayReservations = reservations
     .filter(r => r.area === form.area && r.date === form.date && reservationBlocksCalendar(r))
@@ -2118,11 +2164,11 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
     ? findOverlappingReservation(reservations, form.area, form.date, form.start, safeHours)
     : null;
 
-  const reservationWasSent = notice === "Solicitud enviada en Supabase.";
+  const reservationWasSent = notice === "Solicitud enviada en Supabase." || notice === "Reserva creada por administración en Supabase.";
   const blockingConflict = conflict && !reservationWasSent;
 
   const duplicate = reservations.some(r =>
-    String(r.apt) === String(aptNumber) &&
+    String(r.apt) === String(targetApt) &&
     r.area === form.area &&
     r.date === form.date &&
     r.start === form.start &&
@@ -2156,6 +2202,11 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
   }
 
   async function add() {
+    if (!targetApt) {
+      setNotice(isAdmin ? "Selecciona el apartamento para el que se realizará la reserva." : "Tu usuario no tiene apartamento asignado. Contacta a administración.");
+      return;
+    }
+
     if (maxHours <= 0) {
       setNotice(`Ese horario no está disponible. Horario permitido para ${form.area}: ${scheduleText}.`);
       return;
@@ -2178,7 +2229,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
 
     const payload = reservationToDb({
       buildingId: selectedBuilding,
-      apt: aptNumber || "",
+      apt: targetApt,
       area: form.area,
       date: form.date,
       start: form.start,
@@ -2189,7 +2240,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
       status: "Pendiente",
       requestedBy: userProfile?.id || "",
       requestedByName: userProfile?.fullName || userProfile?.email || "",
-      notes: "",
+      notes: isAdmin ? `Reserva creada por administración para apartamento ${targetApt}` : "",
     });
 
     setSaving(true);
@@ -2208,7 +2259,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
 
     const created = reservationFromDb(data);
     setReservations([created, ...reservations]);
-    setNotice("Solicitud enviada en Supabase.");
+    setNotice(isAdmin ? "Reserva creada por administración en Supabase." : "Solicitud enviada en Supabase.");
   }
 
   async function approve(id, status) {
@@ -2241,12 +2292,32 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="📅" title="Reservas" sub="Calendario y solicitudes de áreas" />
 
-      {["resident", "owner"].includes(role) && (
+      {(isResidentLike || isAdmin) && (
         <Card>
           <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
             <AvailabilityCalendar reservations={reservations} area={form.area} selectedDate={form.date} onSelectDate={updateDate} />
 
             <div className="space-y-3">
+              {isAdmin && (
+                <>
+                  <div className="rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
+                    La reserva quedará registrada como creada por administración y asociada al apartamento seleccionado.
+                  </div>
+                  <Field label="Apartamento">
+                    <select
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={form.apt || ""}
+                      onChange={e => setForm({ ...form, apt: e.target.value })}
+                    >
+                      <option value="">Seleccionar apartamento</option>
+                      {apartmentOptions.map(a => (
+                        <option key={a.id || a.number} value={a.number}>{a.number}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </>
+              )}
+
               <Field label="Área">
                 <select className="mt-1 w-full rounded-xl border px-3 py-2" value={form.area} onChange={e => updateArea(e.target.value)}>
                   <option>Área social techada</option>
@@ -2271,7 +2342,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
                 <b>Horario:</b> {range}<br />
                 <b>Limpieza:</b> {lps(cleaning)} · <b>Depósito:</b> {lps(deposit)}
                 <div className="mt-2 text-xs font-bold text-slate-500">
-                  La solicitud queda pendiente mientras administración la revisa.
+                  {isAdmin ? "La reserva será creada por administración para el apartamento seleccionado." : "La solicitud queda pendiente mientras administración la revisa."}
                 </div>
               </div>
 
@@ -2299,7 +2370,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
               {reservationWasSent && <div className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{notice}</div>}
 
               <Btn onClick={add} variant={saving || maxHours <= 0 || blockingConflict ? "secondary" : "primary"}>
-                {saving ? "Guardando..." : maxHours <= 0 ? "Horario no disponible" : reservationWasSent ? "Solicitud enviada" : blockingConflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : "+ Solicitar reserva"}
+                {saving ? "Guardando..." : maxHours <= 0 ? "Horario no disponible" : reservationWasSent ? (isAdmin ? "Reserva creada" : "Solicitud enviada") : blockingConflict ? "Horario ocupado" : duplicate ? "Solicitud ya registrada" : isAdmin ? "+ Crear reserva" : "+ Solicitar reserva"}
               </Btn>
             </div>
           </div>
@@ -4223,8 +4294,8 @@ export default function NeoVecinoMVP() {
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
     visits: role === "guard"
       ? <GuardAuthorizedVisits visits={scopedVisits} visitLogs={scopedVisitLogs} selectedBuilding={selectedBuilding} />
-      : <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />,
-    reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
+      : <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} apartments={scopedApartments} />,
+    reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} apartments={scopedApartments} />,
     tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
   };
