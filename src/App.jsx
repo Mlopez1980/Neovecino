@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_ADMIN_VISIT_RESERVATION_V9";
+const APP_VERSION = "NEOVECINO_ADMIN_VISIT_RESERVATION_V9_RESIDENTS_FIX";
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -3586,13 +3586,15 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
     };
 
     if (editingId) {
-      const { error } = await supabase
+      const { data: updatedResident, error } = await supabase
         .from("residents")
         .update(payload)
-        .eq("id", editingId);
+        .eq("id", editingId)
+        .select("*")
+        .single();
 
       if (error) {
-        alert("No se pudo actualizar el residente en Supabase.");
+        alert(`No se pudo actualizar el residente en Supabase. Detalle: ${error.message}`);
         console.error(error);
         return;
       }
@@ -3600,35 +3602,27 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
       setResidents(
         residents.map((r) =>
           r.id === editingId
-            ? { ...r, ...form, buildingId: selectedBuilding }
+            ? mapResident(updatedResident)
             : r
         )
       );
 
       setEditingId(null);
     } else {
-      const newResident = {
-        id: `usr-${Date.now()}`,
-        buildingId: selectedBuilding,
-        ...form,
-      };
-
-      const { error } = await supabase
+      // No enviamos ID manual. Supabase debe generar el UUID automáticamente.
+      const { data: createdResident, error } = await supabase
         .from("residents")
-        .insert([
-          {
-            id: newResident.id,
-            ...payload,
-          },
-        ]);
+        .insert([payload])
+        .select("*")
+        .single();
 
       if (error) {
-        alert("No se pudo guardar el residente en Supabase.");
+        alert(`No se pudo guardar el residente en Supabase. Detalle: ${error.message}`);
         console.error(error);
         return;
       }
 
-      setResidents([newResident, ...residents]);
+      setResidents([mapResident(createdResident), ...residents]);
     }
 
     setForm(empty);
