@@ -1,0 +1,25 @@
+{
+  "name": "NeoVecino",
+  "short_name": "NeoVecino",
+  "description": "Plataforma para gestión de edificios residenciales con control de visitas, reservas, tickets, documentos y anuncios.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f6f9",
+  "theme_color": "#dc0000",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
