@@ -3,11 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#020202" />
+
     <title>NeoVecino</title>
+
+    <meta name="theme-color" content="#dc0000" />
+    <meta
+      name="description"
+      content="Plataforma para gestión de edificios residenciales con control de visitas, reservas, tickets, documentos y anuncios."
+    />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="NeoVecino" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-icon-192.png" />
   </head>
+
   <body>
     <div id="root"></div>
+
     <script type="module" src="/src/main.jsx"></script>
+
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").catch(function (error) {
+            console.error("No se pudo registrar el Service Worker de NeoVecino:", error);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
