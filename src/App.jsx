@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_MAINTENANCE_ROLE_V10";
+const APP_VERSION = "NEOVECINO_ADMIN_CREATE_TICKETS_V11";
 const ADMIN_ROLES = ["admin", "maintenance"];
 const isAdminLikeRole = (role) => ADMIN_ROLES.includes(role);
 const seedBuildings = [
@@ -2423,13 +2423,20 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
 }
 
 
-function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding = "canarias", userProfile }) {
+function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding = "canarias", userProfile, apartments = [] }) {
   const [text, setText] = useState("");
+  const [adminTicketForm, setAdminTicketForm] = useState({ apt: "", title: "" });
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [saving, setSaving] = useState(false);
 
-  const baseRows = ["resident", "owner"].includes(role) ? tickets.filter(t => String(t.apt) === String(aptNumber)) : tickets;
+  const isResidentLike = ["resident", "owner"].includes(role);
+  const isAdminLike = isAdminLikeRole(role);
+  const apartmentOptions = (apartments || [])
+    .filter(a => String(a.buildingId || "canarias") === String(selectedBuilding || "canarias"))
+    .sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""), undefined, { numeric: true }));
+
+  const baseRows = isResidentLike ? tickets.filter(t => String(t.apt) === String(aptNumber)) : tickets;
 
   const rows = baseRows.filter(t => {
     const matchesText = `${t.apt} ${t.title} ${t.status}`.toLowerCase().includes(q.toLowerCase());
@@ -2438,12 +2445,20 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
   });
 
   async function add() {
-    if (!text.trim()) return;
+    const ticketTitle = isResidentLike
+      ? String(text || "").trim()
+      : String(adminTicketForm.title || "").trim();
+
+    const ticketApt = isResidentLike
+      ? String(aptNumber || "").trim()
+      : String(adminTicketForm.apt || "Área común").trim();
+
+    if (!ticketTitle) return;
 
     const payload = ticketToDb({
       buildingId: selectedBuilding,
-      apt: aptNumber || "",
-      title: text.trim(),
+      apt: ticketApt || "Área común",
+      title: ticketTitle,
       status: "Abierto",
       date: todayISO(),
       createdBy: userProfile?.id || "",
@@ -2466,7 +2481,11 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
 
     const created = ticketFromDb(data);
     setTickets([created, ...tickets]);
-    setText("");
+    if (isResidentLike) {
+      setText("");
+    } else {
+      setAdminTicketForm({ apt: "", title: "" });
+    }
   }
 
   async function updateStatus(id, status) {
@@ -2504,10 +2523,10 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
       <Title
         icon="🔧"
         title="Mantenimiento"
-        sub={isAdminLikeRole(role) ? "Gestión de tickets y seguimiento" : "Tickets y seguimiento"}
+        sub={isAdminLike ? "Gestión de tickets y seguimiento" : "Tickets y seguimiento"}
       />
 
-      {["resident", "owner"].includes(role) && (
+      {isResidentLike && (
         <Card>
           <h3 className="mb-3 font-bold">Crear nuevo ticket</h3>
           <div className="flex flex-col gap-3 md:flex-row">
@@ -2522,7 +2541,46 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
         </Card>
       )}
 
-      {isAdminLikeRole(role) && (
+      {isAdminLike && (
+        <Card>
+          <h3 className="mb-1 font-bold">Crear ticket operativo</h3>
+          <p className="mb-3 text-sm font-bold text-slate-500">
+            Úsalo cuando administración o mantenimiento identifique un punto de mejora durante una visita al edificio.
+          </p>
+
+          <div className="grid gap-3 md:grid-cols-[260px_1fr_auto]">
+            <select
+              className="rounded-xl border px-3 py-2"
+              value={adminTicketForm.apt}
+              onChange={e => setAdminTicketForm({ ...adminTicketForm, apt: e.target.value })}
+            >
+              <option value="">Área común / general</option>
+              {apartmentOptions.map(a => (
+                <option key={a.id || a.number} value={a.number}>
+                  Apartamento {a.number}
+                </option>
+              ))}
+            </select>
+
+            <input
+              className="rounded-xl border px-3 py-2"
+              value={adminTicketForm.title}
+              onChange={e => setAdminTicketForm({ ...adminTicketForm, title: e.target.value })}
+              placeholder="Describe el punto de mejora o trabajo a realizar"
+            />
+
+            <Btn onClick={add} variant={saving ? "secondary" : "primary"}>
+              {saving ? "Guardando..." : "Crear ticket"}
+            </Btn>
+          </div>
+
+          <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs font-bold text-slate-500">
+            El ticket quedará abierto para que mantenimiento le dé seguimiento y actualice su estado.
+          </div>
+        </Card>
+      )}
+
+      {isAdminLike && (
         <Card>
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl bg-slate-50 p-4">
@@ -2552,7 +2610,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
       <Card>
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h3 className="font-bold">
-            {isAdminLikeRole(role) ? "Tickets registrados" : "Mis tickets"}
+            {isAdminLike ? "Tickets registrados" : "Mis tickets"}
           </h3>
 
           <div className="flex flex-col gap-2 md:flex-row">
@@ -2602,7 +2660,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
                 </div>
               )}
 
-              {isAdminLikeRole(role) && (
+              {isAdminLike && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {t.status === "Abierto" && (
                     <Btn
@@ -4331,7 +4389,7 @@ export default function NeoVecinoMVP() {
       ? <GuardAuthorizedVisits visits={scopedVisits} visitLogs={scopedVisitLogs} selectedBuilding={selectedBuilding} />
       : <Visits role={role} visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} apartments={scopedApartments} />,
     reservations: <Reservations role={role} reservations={scopedReservations} setReservations={scopedSetter(setAllReservations)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} apartments={scopedApartments} />,
-    tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} />,
+    tickets: <Tickets role={role} tickets={scopedTickets} setTickets={scopedSetter(setAllTickets)} aptNumber={residentAptNumber} selectedBuilding={selectedBuilding} userProfile={userProfile} apartments={scopedApartments} />,
     docs: <Docs role={role} docs={scopedDocs} setDocs={scopedSetter(setAllDocs)} />,
   };
 
