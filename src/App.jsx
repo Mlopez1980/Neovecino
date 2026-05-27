@@ -4,7 +4,9 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_ADMIN_VISIT_RESERVATION_V9_RESIDENTS_FIX";
+const APP_VERSION = "NEOVECINO_MAINTENANCE_ROLE_V10";
+const ADMIN_ROLES = ["admin", "maintenance"];
+const isAdminLikeRole = (role) => ADMIN_ROLES.includes(role);
 const seedBuildings = [
   { id: "canarias", name: "Torre Canarias", address: "Portal de las Canarias", units: 32 },
   { id: "lomas", name: "Torre Lomas", address: "Lomas del Guijarro", units: 24 },
@@ -183,7 +185,7 @@ function Powered() {
 }
 
 function BuildingBar({ role, buildings, selectedBuilding, setSelectedBuilding, building }) {
-  const canSwitchBuilding = role === "admin";
+  const canSwitchBuilding = isAdminLikeRole(role);
 
   return (
     <Card className="mb-5 overflow-hidden">
@@ -474,13 +476,24 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
     ["tickets", "Tickets", "🔧"],
     ["docs", "Docs", "📄"],
   ],
+  maintenance: [
+    ["home", "Dashboard", "⌂"],
+    ["apartments", "Apartamentos", "🏠"],
+    ["residents", "Residentes", "👥"],
+    ["users", "Usuarios", "🔐"],
+    ["payments", "Pagos", "💳"],
+    ["visits", "Visitas", "▦"],
+    ["reservations", "Reservas", "📅"],
+    ["tickets", "Tickets", "🔧"],
+    ["docs", "Docs", "📄"],
+  ],
   guard: [
     ["home", "Control de acceso", "🛡️"],
     ["visits", "Visitas autorizadas", "📋"],
   ],
 };
 
-  const label = role === "admin" ? "Administración" : role === "guard" ? "Guardia" : role === "owner" ? "Propietario" : "Residente";
+  const label = role === "admin" ? "Administración" : role === "maintenance" ? "Mantenimiento" : role === "guard" ? "Guardia" : role === "owner" ? "Propietario" : "Residente";
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   return (
@@ -546,7 +559,7 @@ function Shell({ role, active, setActive, children, onLogout, userProfile }) {
 }
 
 function HomePage({ role, apt, apartments, visits, tickets, reservations, announcements = [] }) {
-  if (role === "admin") {
+  if (isAdminLikeRole(role)) {
     return (
       <div className="space-y-4 pb-24 lg:pb-0">
         <Title icon="⌂" title="Dashboard" sub="Resumen administrativo" />
@@ -990,7 +1003,7 @@ function Visits({ role, visits, setVisits, aptNumber = "", selectedBuilding = "c
   const [saving, setSaving] = useState(false);
 
   const isResidentLike = ["resident", "owner"].includes(role);
-  const isAdmin = role === "admin";
+  const isAdmin = isAdminLikeRole(role);
   const apartmentOptions = (apartments || [])
     .filter(a => String(a.buildingId || "canarias") === String(selectedBuilding || "canarias"))
     .sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""), undefined, { numeric: true }));
@@ -1338,7 +1351,7 @@ function VisitCard({ v, role, update }) {
     await update(v.id, buildEntryPatch(v));
   }
 
-  const showAuditDetails = role === "admin" || role === "guard";
+  const showAuditDetails = isAdminLikeRole(role) || role === "guard";
 
   return (
     <div className="rounded-2xl border bg-slate-50 p-4">
@@ -2143,7 +2156,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
   const [saving, setSaving] = useState(false);
 
   const isResidentLike = ["resident", "owner"].includes(role);
-  const isAdmin = role === "admin";
+  const isAdmin = isAdminLikeRole(role);
   const apartmentOptions = (apartments || [])
     .filter(a => String(a.buildingId || "canarias") === String(selectedBuilding || "canarias"))
     .sort((a, b) => String(a.number || "").localeCompare(String(b.number || ""), undefined, { numeric: true }));
@@ -2390,7 +2403,7 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
               <div className="mt-1 text-sm">{r.time}</div>
               <div className="mt-3 rounded-xl bg-white p-3 text-xs"><b>Total:</b> {lps((r.cleaning || 0) + (r.deposit || 0))}</div>
               {r.requestedByName && <div className="mt-2 text-xs font-bold text-slate-400">Solicitado por: {r.requestedByName}</div>}
-              {role === "admin" && r.status === "Pendiente" && (
+              {isAdminLikeRole(role) && r.status === "Pendiente" && (
                 <div className="mt-3 flex gap-2">
                   <Btn className="px-3 py-1.5" onClick={() => approve(r.id, "Aprobada")}>Aprobar</Btn>
                   <Btn variant="danger" className="px-3 py-1.5" onClick={() => approve(r.id, "Rechazada")}>Rechazar</Btn>
@@ -2491,7 +2504,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
       <Title
         icon="🔧"
         title="Mantenimiento"
-        sub={role === "admin" ? "Gestión de tickets y seguimiento" : "Tickets y seguimiento"}
+        sub={isAdminLikeRole(role) ? "Gestión de tickets y seguimiento" : "Tickets y seguimiento"}
       />
 
       {["resident", "owner"].includes(role) && (
@@ -2509,7 +2522,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
         </Card>
       )}
 
-      {role === "admin" && (
+      {isAdminLikeRole(role) && (
         <Card>
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl bg-slate-50 p-4">
@@ -2539,7 +2552,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
       <Card>
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h3 className="font-bold">
-            {role === "admin" ? "Tickets registrados" : "Mis tickets"}
+            {isAdminLikeRole(role) ? "Tickets registrados" : "Mis tickets"}
           </h3>
 
           <div className="flex flex-col gap-2 md:flex-row">
@@ -2589,7 +2602,7 @@ function Tickets({ role, tickets, setTickets, aptNumber = "", selectedBuilding =
                 </div>
               )}
 
-              {role === "admin" && (
+              {isAdminLikeRole(role) && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {t.status === "Abierto" && (
                     <Btn
@@ -2656,11 +2669,11 @@ function Docs({ role, docs, setDocs }) {
   function save() { if (!form.fileName) { setMsg("Primero selecciona un archivo."); return; } const doc = { id: `doc-${Date.now()}`, ...form, date: todayISO() }; setDocs([doc, ...docs]); setOpen(doc.id); setForm({ title: "", fileName: "", type: "", size: "", dataUrl: "" }); setFileKey(k => k + 1); setMsg("Documento compartido con residentes."); }
   function remove(id) { setDocs(docs.filter(d => d.id !== id)); if (open === id) setOpen(null); }
   function Preview({ d }) { if (!d.dataUrl) return <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm">Documento de ejemplo sin archivo real.</div>; if (["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(d.type)) return <img src={d.dataUrl} alt={d.title} className="mt-3 max-h-[520px] w-full rounded-xl object-contain bg-slate-50" />; if (d.type === "PDF") return <div className="mt-3 rounded-xl bg-slate-50 p-3"><a href={d.dataUrl} target="_blank" rel="noreferrer" className="mb-2 inline-block rounded-xl px-3 py-2 text-xs font-bold text-white" style={{ backgroundColor: BRAND.steel }}>Abrir PDF</a><iframe title={d.title} src={d.dataUrl} className="h-[520px] w-full rounded-xl border bg-white" /></div>; return <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm">Usa Descargar para abrir este archivo.</div>; }
-  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="📄" title="Documentos" sub="Archivos del condominio" />{role === "admin" && <Card><h3 className="mb-3 font-bold">Subir documento</h3><div className="grid gap-3 md:grid-cols-2"><Field label="Nombre"><Text value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></Field><Field label="Archivo"><input key={fileKey} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="mt-1 w-full rounded-xl border px-3 py-2" onChange={e => pick(e.target.files?.[0])} /></Field></div>{form.fileName && <div className="mt-3 text-sm">Seleccionado: <b>{form.fileName}</b> · {form.size}</div>}{msg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}<Btn onClick={save} className="mt-4">Subir y compartir</Btn></Card>}<Card><h3 className="mb-3 font-bold">Documentos disponibles</h3>{role !== "admin" && msg && <div className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}{docs.map(d => <div key={d.id} className="border-b py-3 last:border-0"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><b>{d.title}</b><div className="text-sm text-slate-500">{d.type} · {fmtDate(d.date)} · {d.size}</div><div className="text-xs text-slate-400">{d.fileName}</div></div><div className="flex gap-2"><Btn variant="secondary" className="px-3" onClick={() => d.dataUrl ? setOpen(open === d.id ? null : d.id) : setMsg("Documento de ejemplo sin archivo real.")}>{open === d.id ? "Ocultar" : "Ver"}</Btn>{d.dataUrl && <a href={d.dataUrl} download={d.fileName} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ backgroundColor: BRAND.steel }}>Descargar</a>}{role === "admin" && <Btn variant="danger" className="px-3" onClick={() => remove(d.id)}>Eliminar</Btn>}</div></div>{open === d.id && <Preview d={d} />}</div>)}</Card></div>;
+  return <div className="space-y-4 pb-24 lg:pb-0"><Title icon="📄" title="Documentos" sub="Archivos del condominio" />{isAdminLikeRole(role) && <Card><h3 className="mb-3 font-bold">Subir documento</h3><div className="grid gap-3 md:grid-cols-2"><Field label="Nombre"><Text value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></Field><Field label="Archivo"><input key={fileKey} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="mt-1 w-full rounded-xl border px-3 py-2" onChange={e => pick(e.target.files?.[0])} /></Field></div>{form.fileName && <div className="mt-3 text-sm">Seleccionado: <b>{form.fileName}</b> · {form.size}</div>}{msg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}<Btn onClick={save} className="mt-4">Subir y compartir</Btn></Card>}<Card><h3 className="mb-3 font-bold">Documentos disponibles</h3>{!isAdminLikeRole(role) && msg && <div className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}{docs.map(d => <div key={d.id} className="border-b py-3 last:border-0"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><b>{d.title}</b><div className="text-sm text-slate-500">{d.type} · {fmtDate(d.date)} · {d.size}</div><div className="text-xs text-slate-400">{d.fileName}</div></div><div className="flex gap-2"><Btn variant="secondary" className="px-3" onClick={() => d.dataUrl ? setOpen(open === d.id ? null : d.id) : setMsg("Documento de ejemplo sin archivo real.")}>{open === d.id ? "Ocultar" : "Ver"}</Btn>{d.dataUrl && <a href={d.dataUrl} download={d.fileName} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ backgroundColor: BRAND.steel }}>Descargar</a>}{isAdminLikeRole(role) && <Btn variant="danger" className="px-3" onClick={() => remove(d.id)}>Eliminar</Btn>}</div></div>{open === d.id && <Preview d={d} />}</div>)}</Card></div>;
 }
 
 
-function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
+function ApartmentsAdmin({ apartments, setApartments, selectedBuilding, readOnly = false }) {
   // Propietario = dueño legal o contacto de referencia.
   // Residente actual = persona que vive/usa el apartamento, que puede ser inquilino.
   const empty = { number: "", level: "Nivel 1", owner: "", resident: "", balance: 0, status: "Vacío" };
@@ -2882,12 +2895,16 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="🏠" title="Apartamentos" sub="Administración de unidades por edificio" />
 
+      {readOnly && <Card className="border-amber-200 bg-amber-50 text-sm font-bold text-amber-800">Modo solo lectura: puedes consultar apartamentos, pero no crear, editar ni eliminar registros.</Card>}
+
       <div className="grid gap-4 md:grid-cols-4">
         <Card><p className="text-sm text-slate-500">Total unidades</p><h3 className="text-3xl font-black">{apartments.length}</h3></Card>
         <Card><p className="text-sm text-slate-500">Ocupados</p><h3 className="text-3xl font-black">{occupied}</h3></Card>
         <Card><p className="text-sm text-slate-500">Con residente</p><h3 className="text-3xl font-black">{withResident}</h3></Card>
         <Card><p className="text-sm text-slate-500">Mora del edificio</p><h3 className="text-3xl font-black">{usd(totalBalance)}</h3></Card>
       </div>
+
+      {!readOnly && (
 
       <Card>
         <h3 className="mb-3 font-bold">Crear varios apartamentos</h3>
@@ -2918,7 +2935,9 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
         </div>
         <Btn onClick={createBulk} className="mt-4">+ Crear apartamentos en lote</Btn>
       </Card>
+      )}
 
+      {!readOnly && (
       <Card>
         <h3 className="mb-3 font-bold">{editingId ? "Editar apartamento" : "Ingresar apartamento individual"}</h3>
         <div className="grid gap-3 md:grid-cols-3">
@@ -2955,6 +2974,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
         </div>
         {msg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{msg}</div>}
       </Card>
+      )}
 
       <Card>
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -2980,10 +3000,12 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
                   <div><b>Residente:</b> {a.resident || "-"}</div>
                   <div><b>Saldo:</b> {usd(a.balance || 0)}</div>
                 </div>
+                {!readOnly && (
                 <div className="mt-3 flex gap-2">
                   <Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(a)}>Editar</Btn>
                   <Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(a.id)}>Eliminar</Btn>
                 </div>
+                )}
               </div>
             ))}
           </div>
@@ -2994,7 +3016,7 @@ function ApartmentsAdmin({ apartments, setApartments, selectedBuilding }) {
 }
 
 
-function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, currentUserId }) {
+function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, currentUserId, readOnly = false }) {
   const empty = {
     id: "",
     email: "",
@@ -3057,7 +3079,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
     if (!form.fullName.trim()) return "Debes ingresar el nombre completo del usuario.";
     if (!editingId && !form.password.trim()) return "Debes ingresar una contraseña temporal.";
     if (!editingId && form.password.trim().length < 6) return "La contraseña temporal debe tener al menos 6 caracteres.";
-    if (!["admin", "owner", "resident", "guard"].includes(form.role)) return "Selecciona un rol válido.";
+    if (!["admin", "maintenance", "owner", "resident", "guard"].includes(form.role)) return "Selecciona un rol válido.";
     if (!form.buildingId) return "Selecciona el edificio.";
     if (["resident", "owner"].includes(form.role) && !form.apt.trim()) return "Para un propietario o residente debes asignar el apartamento.";
     return "";
@@ -3258,6 +3280,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
 
   function roleLabel(role) {
     if (role === "admin") return "Administrador";
+    if (role === "maintenance") return "Mantenimiento";
     if (role === "owner") return "Propietario";
     if (role === "guard") return "Guardia";
     return "Residente";
@@ -3265,6 +3288,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
 
   function roleTone(role) {
     if (role === "admin") return "bad";
+    if (role === "maintenance") return "blue";
     if (role === "owner") return "warn";
     if (role === "guard") return "blue";
     return "good";
@@ -3275,19 +3299,24 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
   const ownerUsers = users.filter(u => u.role === "owner").length;
   const guardUsers = users.filter(u => u.role === "guard").length;
   const adminUsers = users.filter(u => u.role === "admin").length;
+  const maintenanceUsers = users.filter(u => u.role === "maintenance").length;
 
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="🔐" title="Usuarios" sub="Creación automática de accesos por rol, edificio y apartamento" />
 
-      <div className="grid gap-4 md:grid-cols-5">
+      {readOnly && <Card className="border-amber-200 bg-amber-50 text-sm font-bold text-amber-800">Modo solo lectura: puedes consultar usuarios, pero no crear, editar, restablecer contraseña, desactivar ni eliminar perfiles.</Card>}
+
+      <div className="grid gap-4 md:grid-cols-6">
         <Card><p className="text-sm text-slate-500">Usuarios activos</p><h3 className="text-3xl font-black">{activeUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Administradores</p><h3 className="text-3xl font-black">{adminUsers}</h3></Card>
+        <Card><p className="text-sm text-slate-500">Mantenimiento</p><h3 className="text-3xl font-black">{maintenanceUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Propietarios</p><h3 className="text-3xl font-black">{ownerUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Residentes</p><h3 className="text-3xl font-black">{residentUsers}</h3></Card>
         <Card><p className="text-sm text-slate-500">Guardias</p><h3 className="text-3xl font-black">{guardUsers}</h3></Card>
       </div>
 
+      {!readOnly && (
       <Card>
         <h3 className="mb-3 font-bold">{editingId ? "Editar perfil de usuario" : "Crear usuario"}</h3>
 
@@ -3339,6 +3368,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
               }
             >
               <option value="admin">Administrador</option>
+              <option value="maintenance">Mantenimiento</option>
               <option value="owner">Propietario</option>
               <option value="resident">Residente</option>
               <option value="guard">Guardia</option>
@@ -3397,6 +3427,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
           {editingId && <Btn variant="outline" onClick={resetForm}>Cancelar edición</Btn>}
         </div>
       </Card>
+      )}
 
       <Card>
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -3443,12 +3474,14 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
                   <div className="mt-2 break-all text-xs text-slate-400"><b>UID:</b> {u.id}</div>
                 </div>
 
+                {!readOnly && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(u)}>Editar</Btn>
                   <Btn variant="outline" className="px-3 py-1.5" onClick={() => resetPasswordForUser(u)}>Restablecer contraseña</Btn>
                   {u.status === "Activo" && <Btn variant="outline" className="px-3 py-1.5" onClick={() => deactivate(u)}>Desactivar</Btn>}
                   <Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(u)}>Eliminar perfil</Btn>
                 </div>
+                )}
               </div>
             );
           })}
@@ -3464,7 +3497,7 @@ function UsersAdmin({ users, setUsers, buildings, apartments, selectedBuilding, 
   );
 }
 
-function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding, announcements = [], setAnnouncements }) {
+function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding, announcements = [], setAnnouncements, readOnly = false }) {
   const empty = { apt: "", name: "", dni: "", email: "", phone: "", type: "Propietario", status: "Activo", notes: "" };
   const emptyAnnouncement = { target: "Todos", apt: "", title: "", message: "", priority: "Normal" };
 
@@ -3657,6 +3690,9 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
     <div className="space-y-4 pb-24 lg:pb-0">
       <Title icon="👥" title="Residentes" sub="Registro de propietarios, inquilinos, contactos y anuncios del edificio" />
 
+      {readOnly && <Card className="border-amber-200 bg-amber-50 text-sm font-bold text-amber-800">Modo solo lectura: puedes consultar residentes y anuncios, pero no agregar, editar ni eliminar registros.</Card>}
+
+      {!readOnly && (
       <Card>
         <h3 className="mb-3 font-bold">Enviar anuncio a residentes</h3>
         <div className="grid gap-3 md:grid-cols-3">
@@ -3703,6 +3739,7 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
         </div>
         {annMsg && <div className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold">{annMsg}</div>}
       </Card>
+      )}
 
       <Card>
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -3726,15 +3763,18 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
                 <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-500">
                   Destino: {a.target === "Apartamento específico" ? `Apartamento ${a.apt}` : a.target}
                 </div>
+                {!readOnly && (
                 <div className="mt-3 flex gap-2">
                   <Btn variant="danger" className="px-3 py-1.5" onClick={() => removeAnnouncement(a.id)}>Eliminar</Btn>
                 </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </Card>
 
+      {!readOnly && (
       <Card>
         <h3 className="mb-3 font-bold">{editingId ? "Editar residente" : "Ingresar nuevo residente"}</h3>
         <div className="grid gap-3 md:grid-cols-3">
@@ -3768,6 +3808,7 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
           {editingId && <Btn variant="outline" onClick={() => { setEditingId(null); setForm(empty); }}>Cancelar edición</Btn>}
         </div>
       </Card>
+      )}
 
       <Card>
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -3782,7 +3823,7 @@ function ResidentsAdmin({ residents, setResidents, apartments, selectedBuilding,
                 <Badge tone={r.status === "Activo" ? "good" : r.status === "Pendiente" ? "warn" : "default"}>{r.status}</Badge>
               </div>
               <div className="mt-3 text-sm"><div><b>DNI:</b> {r.dni || "-"}</div><div><b>Correo:</b> {r.email || "-"}</div><div><b>Teléfono:</b> {r.phone || "-"}</div>{r.notes && <div><b>Notas:</b> {r.notes}</div>}</div>
-              <div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div>
+              {!readOnly && <div className="mt-3 flex gap-2"><Btn variant="secondary" className="px-3 py-1.5" onClick={() => edit(r)}>Editar</Btn><Btn variant="danger" className="px-3 py-1.5" onClick={() => remove(r.id)}>Eliminar</Btn></div>}
             </div>
           ))}
         </div>
@@ -4282,9 +4323,9 @@ export default function NeoVecinoMVP() {
     home: role === "guard"
       ? <GuardPanel visits={scopedVisits} setVisits={scopedSetter(setAllVisits)} selectedBuilding={selectedBuilding} visitLogs={scopedVisitLogs} setVisitLogs={scopedSetter(setVisitLogs)} userProfile={userProfile} />
       : <HomePage role={role} apt={apt} apartments={scopedApartments} visits={scopedVisits} tickets={scopedTickets} reservations={scopedReservations} announcements={scopedAnnouncements} />,
-    apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} />,
-    residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} />,
-    users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} />,
+    apartments: <ApartmentsAdmin apartments={scopedApartments} setApartments={scopedSetter(setApartments)} selectedBuilding={selectedBuilding} readOnly={role === "maintenance"} />,
+    residents: <ResidentsAdmin residents={scopedResidents} setResidents={scopedSetter(setAllResidents)} apartments={scopedApartments} selectedBuilding={selectedBuilding} announcements={scopedAnnouncements} setAnnouncements={scopedSetter(setAllAnnouncements)} readOnly={role === "maintenance"} />,
+    users: <UsersAdmin users={appUsers} setUsers={setAppUsers} buildings={buildings} apartments={apartments} selectedBuilding={selectedBuilding} currentUserId={userProfile?.id} readOnly={role === "maintenance"} />,
     payments: <Payments role={role} payments={scopedPayments} apartments={scopedApartments} aptNumber={residentAptNumber} />,
     visits: role === "guard"
       ? <GuardAuthorizedVisits visits={scopedVisits} visitLogs={scopedVisitLogs} selectedBuilding={selectedBuilding} />
