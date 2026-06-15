@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "./lib/supabaseClient";
 
 const BRAND = { black: "#020202", steel: "#636e7a", red: "#ff0000", white: "#ffffff" };
-const APP_VERSION = "NEOVECINO_ADMIN_CREATE_TICKETS_V11";
+const APP_VERSION = "NEOVECINO_REALTIME_RESERVAS_V12";
 const ADMIN_ROLES = ["admin", "maintenance"];
 const isAdminLikeRole = (role) => ADMIN_ROLES.includes(role);
 const seedBuildings = [
@@ -4280,6 +4280,26 @@ export default function NeoVecinoMVP() {
 
     loadCoreData();
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        loadCoreData();
+      }
+    };
+
+    const refreshOnFocus = () => {
+      loadCoreData();
+    };
+
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadCoreData();
+      }
+    }, 60000);
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("online", refreshOnFocus);
+
     const channel = supabase
       .channel("neovecino-realtime-core")
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, payload => {
@@ -4320,6 +4340,10 @@ export default function NeoVecinoMVP() {
       .subscribe();
 
     return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("online", refreshOnFocus);
+      window.clearInterval(refreshInterval);
       supabase.removeChannel(channel);
     };
   }, []);
