@@ -2163,7 +2163,12 @@ function Reservations({ role, reservations, setReservations, aptNumber = "", sel
   const targetApt = isResidentLike ? String(aptNumber || "").trim() : String(form.apt || "").trim();
   const maxHours = getMaxReservableHours(form.area, form.date, form.start);
   const scheduleText = getScheduleText(form.area, form.date);
-  const cleaning = form.area === "Coworking" ? 0 : isSunday(form.date) ? 1600 : 1000;
+  const cleaning =
+  form.area === "Coworking"
+    ? 0
+    : dayIndex(form.date) === 6
+      ? 1600
+      : 1000;
   const deposit = form.area === "Coworking" ? 0 : 1000;
   const safeHours = maxHours > 0 ? Math.min(Number(form.hours || 1), maxHours) : Number(form.hours || 1);
   const range = `${clock(form.start)} - ${clock(addHours(form.start, safeHours))}`;
